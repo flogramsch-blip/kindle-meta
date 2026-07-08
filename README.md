@@ -13,13 +13,16 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
 
 ## Funktionen
 
-- **Lesen**: EPUB & PDF – vorhandene Metadaten + Textprobe der ersten Seiten.
+- **Lesen**: EPUB & PDF nativ, **MOBI/AZW3/AZW** via Calibre – vorhandene
+  Metadaten + Textprobe der ersten Seiten.
 - **Anreichern** aus drei Quellen:
   1. **Online-Datenbanken** – Google Books & Open Library (Cover, Verlag, Datum, ISBN, Seiten).
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
+- **Cover-Auswahl**: Aus mehreren Treffern das beste Cover per Klick wählen.
+- **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern (`batch`).
 - **Schreiben**: Metadaten + Cover eingebettet zurück in die Datei.
-- **Optional**: Konvertierung nach AZW3/MOBI via Calibre (für ältere Kindles).
+- **Konvertierung** nach AZW3/MOBI via Calibre (für ältere Kindles).
 
 ## Installation
 
@@ -58,6 +61,14 @@ kindle-meta apply   buch.epub \
     --author "Hermann Hesse" \
     --publisher "Suhrkamp" --date 1927 \
     --out fertig.epub                       # schreiben (Original bleibt erhalten)
+
+# Stapelverarbeitung: erst Trockenlauf, dann schreiben
+kindle-meta batch *.epub                    # nur Vorschläge anzeigen
+kindle-meta batch *.epub --apply --out-dir fertig/   # besten Vorschlag schreiben
+
+# Kindle-Eigenformate (erfordert Calibre)
+kindle-meta info    buch.azw3
+kindle-meta convert fertig.epub --to azw3   # für ältere Kindles
 ```
 
 ## Auf den Kindle bringen
@@ -76,12 +87,13 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 |-------|---------|
 | `kindle_meta/models.py`   | `BookMetadata` – zentrales Datenmodell + Merge-Logik |
 | `kindle_meta/readers.py`  | EPUB/PDF einlesen (Metadaten + Textprobe) |
+| `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
 | `kindle_meta/providers.py`| Google Books & Open Library abfragen |
 | `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
-| `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge |
-| `kindle_meta/writers.py`  | Metadaten + Cover zurückschreiben, Calibre-Konvertierung |
-| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche |
-| `kindle_meta/cli.py`      | Kommandozeile |
+| `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
+| `kindle_meta/writers.py`  | Metadaten + Cover zurückschreiben |
+| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche mit Cover-Auswahl |
+| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.
 
@@ -94,9 +106,9 @@ pytest
 
 ## Roadmap
 
-- Weitere Formate: MOBI/AZW3 direkt lesen/schreiben (via Calibre-Anbindung).
-- Stapelverarbeitung mehrerer Bücher in einem Durchgang.
-- Cover-Auswahl aus mehreren Treffern.
+- Cover-Zuschnitt/Optimierung für die Kindle-Anzeige.
+- Fortschrittsanzeige & Abbrechen im Stapellauf (GUI).
+- Direkter Send-to-Kindle-Versand per E-Mail aus der App.
 
 ## Lizenz
 

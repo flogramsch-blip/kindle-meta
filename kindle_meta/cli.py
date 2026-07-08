@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .enrich import enrich_file
+from .enrich import enrich_batch, enrich_file
 from .models import BookMetadata
 from .readers import read_metadata
 from .writers import write_metadata
@@ -64,6 +64,44 @@ def cmd_apply(args) -> int:
     return 0
 
 
+def cmd_batch(args) -> int:
+    outcomes = enrich_batch(
+        args.paths,
+        apply=args.apply,
+        out_dir=args.out_dir,
+        use_llm=not args.no_llm,
+    )
+    written = 0
+    for oc in outcomes:
+        name = oc.path.rsplit("/", 1)[-1]
+        if not oc.ok:
+            print(f"✗ {name}: {oc.error}")
+            continue
+        best = oc.result.best
+        line = f"• {name}: {best.title or '?'} — {best.author_str or '?'}"
+        if best.published:
+            line += f" ({best.published})"
+        if oc.written_to:
+            line += f"  → geschrieben: {oc.written_to}"
+            written += 1
+        elif args.apply:
+            line += "  (kein Vorschlag – übersprungen)"
+        print(line)
+    if args.apply:
+        print(f"\n{written}/{len(outcomes)} Datei(en) geschrieben.")
+    else:
+        print(f"\nTrockenlauf – mit --apply schreiben. {len(outcomes)} Datei(en) geprüft.")
+    return 0
+
+
+def cmd_convert(args) -> int:
+    from . import calibre
+
+    out = calibre.convert(args.path, args.to)
+    print(f"Konvertiert: {out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kindle-meta", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -86,6 +124,18 @@ def main(argv: list[str] | None = None) -> int:
     p_apply.add_argument("--date")
     p_apply.add_argument("--isbn")
     p_apply.set_defaults(func=cmd_apply)
+
+    p_batch = sub.add_parser("batch", help="Mehrere Dateien anreichern (Trockenlauf oder --apply)")
+    p_batch.add_argument("paths", nargs="+", help="mehrere Dateien")
+    p_batch.add_argument("--apply", action="store_true", help="besten Vorschlag schreiben")
+    p_batch.add_argument("--out-dir", help="Zielordner (sonst Originale überschreiben)")
+    p_batch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
+    p_batch.set_defaults(func=cmd_batch)
+
+    p_convert = sub.add_parser("convert", help="Format via Calibre konvertieren (z. B. nach azw3)")
+    p_convert.add_argument("path")
+    p_convert.add_argument("--to", default="azw3", help="Zielformat: azw3/mobi/epub (Standard: azw3)")
+    p_convert.set_defaults(func=cmd_convert)
 
     args = parser.parse_args(argv)
     return args.func(args)

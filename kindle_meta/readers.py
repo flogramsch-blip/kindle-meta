@@ -27,10 +27,20 @@ def read_metadata(path: str) -> BookMetadata:
         meta = _read_epub(path)
     elif ext == ".pdf":
         meta = _read_pdf(path)
+    elif ext in _CALIBRE_EXTENSIONS:
+        from . import calibre  # lazy, damit Calibre optional bleibt
+
+        meta = calibre.read_metadata(path)
     else:
-        raise UnsupportedFormat(f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf)")
+        raise UnsupportedFormat(
+            f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf, .mobi, .azw3, .azw)"
+        )
     meta.source_path = path
     return meta
+
+
+# Kindle-Eigenformate laufen über Calibre (siehe kindle_meta.calibre).
+_CALIBRE_EXTENSIONS = (".mobi", ".azw3", ".azw")
 
 
 # --------------------------------------------------------------------------- #

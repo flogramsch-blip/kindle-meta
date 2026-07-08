@@ -43,8 +43,12 @@ def write_metadata(meta: BookMetadata, out_path: Optional[str] = None) -> str:
         _write_epub(meta, target)
     elif ext == ".pdf":
         _write_pdf(meta, target)
+    elif ext in (".mobi", ".azw3", ".azw"):
+        from . import calibre  # lazy, damit Calibre optional bleibt
+
+        calibre.write_metadata(meta, target)
     else:
-        raise WriteError(f"Kein Writer für '{ext}' (unterstützt: .epub, .pdf)")
+        raise WriteError(f"Kein Writer für '{ext}' (unterstützt: .epub, .pdf, .mobi, .azw3, .azw)")
     return target
 
 

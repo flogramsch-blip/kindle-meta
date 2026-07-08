@@ -19,8 +19,8 @@ import sys
 import traceback
 from dataclasses import replace
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..enrich import EnrichmentResult, enrich_metadata
+from ..enrich import CoverCandidate, EnrichmentResult, enrich_metadata
 from ..models import BookMetadata
 from ..readers import read_metadata
 from ..writers import write_metadata
@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         # Zustand
         self._current_meta: BookMetadata | None = None
         self._suggestions: list[BookMetadata] = []
+        self._cover_candidates: list[CoverCandidate] = []
 
         self._build_ui()
         self.setAcceptDrops(True)
@@ -136,6 +137,18 @@ class MainWindow(QMainWindow):
         top.addLayout(cover_box)
         top.addLayout(form, 1)
         right.addLayout(top)
+
+        # Cover-Auswahl: klickbare Thumbnails aus mehreren Treffern.
+        self.cover_picker = QListWidget()
+        self.cover_picker.setFlow(QListWidget.LeftToRight)
+        self.cover_picker.setWrapping(False)
+        self.cover_picker.setFixedHeight(120)
+        self.cover_picker.setIconSize(QSize(70, 96))
+        self.cover_picker.setSpacing(6)
+        self.cover_picker.itemClicked.connect(self._on_pick_cover)
+        self.cover_picker.hide()
+        right.addWidget(QLabel("Cover-Auswahl (nach der Suche):"))
+        right.addWidget(self.cover_picker)
 
         # Vorschläge + Aktionen
         self.suggestion_box = QComboBox()
@@ -203,6 +216,9 @@ class MainWindow(QMainWindow):
     def _on_meta_loaded(self, meta: BookMetadata) -> None:
         self._current_meta = meta
         self._suggestions = []
+        self._cover_candidates = []
+        self.cover_picker.clear()
+        self.cover_picker.hide()
         self.suggestion_box.clear()
         self.suggestion_box.setEnabled(False)
         self._fill_form(meta)
@@ -286,8 +302,24 @@ class MainWindow(QMainWindow):
         self.suggestion_box.setEnabled(bool(result.suggestions))
         self.suggestion_box.blockSignals(False)
 
+        # Cover-Auswahl befüllen.
+        self._cover_candidates = result.cover_candidates
+        self.cover_picker.clear()
+        for cand in self._cover_candidates:
+            pix = QPixmap()
+            if not pix.loadFromData(cand.data):
+                continue
+            item = QListWidgetItem(QIcon(pix), cand.label)
+            item.setToolTip(cand.label)
+            item.setData(Qt.UserRole, cand)
+            self.cover_picker.addItem(item)
+        self.cover_picker.setVisible(self.cover_picker.count() > 0)
+
         note = " (KI half beim Erkennen)" if result.used_llm else ""
-        self.status.setText(f"{len(result.suggestions)} Vorschlag/Vorschläge gefunden{note}.")
+        covers = f", {self.cover_picker.count()} Cover zur Auswahl" if self.cover_picker.count() else ""
+        self.status.setText(
+            f"{len(result.suggestions)} Vorschlag/Vorschläge gefunden{note}{covers}."
+        )
 
     def _apply_suggestion(self, index: int) -> None:
         if index <= 0 or index - 1 >= len(self._suggestions):
@@ -298,6 +330,16 @@ class MainWindow(QMainWindow):
         self._current_meta = merged
         self._fill_form(merged)
         self.status.setText("Vorschlag übernommen – bitte prüfen und speichern.")
+
+    def _on_pick_cover(self, item: QListWidgetItem) -> None:
+        if self._current_meta is None:
+            return
+        cand: CoverCandidate = item.data(Qt.UserRole)
+        self._current_meta = replace(
+            self._current_meta, cover=cand.data, cover_mime=cand.mime
+        )
+        self._show_cover(self._current_meta)
+        self.status.setText(f"Cover übernommen: {cand.label}")
 
     # -- Speichern ---------------------------------------------------------- #
     def _save(self) -> None:

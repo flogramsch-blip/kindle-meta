@@ -10,11 +10,13 @@ Der typische Ablauf:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from . import llm, providers
 from .models import BookMetadata
 from .readers import read_metadata
+from .writers import write_metadata
 
 
 @dataclass
@@ -31,6 +33,34 @@ class EnrichmentResult:
         if self.suggestions:
             return self.original.merged_with(self.suggestions[0], prefer_other=True)
         return self.original
+
+    @property
+    def cover_candidates(self) -> list["CoverCandidate"]:
+        """Alle verfügbaren Cover (Original + Vorschläge), dedupliziert.
+
+        Für die GUI, damit der Nutzer aus mehreren Treffern das beste Cover
+        auswählen kann.
+        """
+        seen: set[bytes] = set()
+        out: list[CoverCandidate] = []
+        if self.original.cover:
+            out.append(CoverCandidate("Aus Datei", self.original.cover, self.original.cover_mime))
+            seen.add(self.original.cover)
+        for i, sug in enumerate(self.suggestions):
+            if sug.cover and sug.cover not in seen:
+                label = sug.title or f"Vorschlag {i + 1}"
+                out.append(CoverCandidate(label, sug.cover, sug.cover_mime))
+                seen.add(sug.cover)
+        return out
+
+
+@dataclass
+class CoverCandidate:
+    """Ein auswählbares Cover-Bild mit beschreibendem Label."""
+
+    label: str
+    data: bytes
+    mime: str | None
 
 
 def build_query(meta: BookMetadata) -> str:
@@ -78,3 +108,57 @@ def enrich_metadata(
         suggestions.extend(providers.search(query, max_results=max_results))
 
     return EnrichmentResult(original=original, suggestions=suggestions, used_llm=used_llm)
+
+
+# --------------------------------------------------------------------------- #
+# Stapelverarbeitung
+# --------------------------------------------------------------------------- #
+@dataclass
+class BatchOutcome:
+    """Ergebnis eines Buches im Stapellauf."""
+
+    path: str
+    result: EnrichmentResult | None = None
+    written_to: str | None = None      # gesetzt, wenn geschrieben wurde
+    error: str | None = None           # gesetzt bei Fehler
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+def enrich_batch(
+    paths: list[str],
+    *,
+    apply: bool = False,
+    out_dir: str | None = None,
+    use_llm: bool = True,
+    max_results: int = 5,
+) -> list[BatchOutcome]:
+    """Reichert mehrere Dateien an und schreibt optional den besten Vorschlag.
+
+    ``apply=False`` liefert nur Vorschläge (Trockenlauf). ``apply=True`` schreibt
+    den besten Vorschlag pro Datei – nach ``out_dir`` kopiert, falls angegeben,
+    sonst in die Originaldatei. Nur Dateien mit mindestens einem Vorschlag
+    werden geschrieben; Fehler einzelner Dateien brechen den Lauf nicht ab.
+    """
+    outcomes: list[BatchOutcome] = []
+    for path in paths:
+        outcome = BatchOutcome(path=path)
+        try:
+            result = enrich_file(path, use_llm=use_llm, max_results=max_results)
+            outcome.result = result
+            if apply and result.suggestions:
+                out_path = _out_path_for(path, out_dir)
+                outcome.written_to = write_metadata(result.best, out_path)
+        except Exception as exc:  # einzelne Datei darf den Stapel nicht stoppen
+            outcome.error = f"{type(exc).__name__}: {exc}"
+        outcomes.append(outcome)
+    return outcomes
+
+
+def _out_path_for(src: str, out_dir: str | None) -> str | None:
+    if not out_dir:
+        return None  # in-place
+    os.makedirs(out_dir, exist_ok=True)
+    return os.path.join(out_dir, os.path.basename(src))
