@@ -59,17 +59,23 @@ def cmd_apply(args) -> int:
         meta.published = args.date
     if args.isbn:
         meta.isbn = args.isbn
-    out = write_metadata(meta, args.out)
+    out = write_metadata(meta, args.out, optimize_cover=args.optimize_cover)
     print(f"Geschrieben: {out}")
     return 0
 
 
 def cmd_batch(args) -> int:
+    def progress(i, total, path, outcome):
+        mark = "✓" if outcome.ok else "✗"
+        print(f"  [{i + 1}/{total}] {mark} {path.rsplit('/', 1)[-1]}")
+
     outcomes = enrich_batch(
         args.paths,
         apply=args.apply,
         out_dir=args.out_dir,
         use_llm=not args.no_llm,
+        optimize_cover=args.optimize_cover,
+        progress=progress,
     )
     written = 0
     for oc in outcomes:
@@ -102,6 +108,14 @@ def cmd_convert(args) -> int:
     return 0
 
 
+def cmd_send(args) -> int:
+    from .sendmail import send_to_kindle
+
+    send_to_kindle(args.path, args.to)
+    print(f"An Kindle gesendet: {args.to}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kindle-meta", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -123,6 +137,9 @@ def main(argv: list[str] | None = None) -> int:
     p_apply.add_argument("--publisher")
     p_apply.add_argument("--date")
     p_apply.add_argument("--isbn")
+    p_apply.add_argument(
+        "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
     p_apply.set_defaults(func=cmd_apply)
 
     p_batch = sub.add_parser("batch", help="Mehrere Dateien anreichern (Trockenlauf oder --apply)")
@@ -130,6 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     p_batch.add_argument("--apply", action="store_true", help="besten Vorschlag schreiben")
     p_batch.add_argument("--out-dir", help="Zielordner (sonst Originale überschreiben)")
     p_batch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
+    p_batch.add_argument(
+        "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
     p_batch.set_defaults(func=cmd_batch)
 
     p_convert = sub.add_parser("convert", help="Format via Calibre konvertieren (z. B. nach azw3)")
@@ -137,8 +157,23 @@ def main(argv: list[str] | None = None) -> int:
     p_convert.add_argument("--to", default="azw3", help="Zielformat: azw3/mobi/epub (Standard: azw3)")
     p_convert.set_defaults(func=cmd_convert)
 
+    p_send = sub.add_parser("send", help="Datei per Send-to-Kindle an @kindle.com-Adresse mailen")
+    p_send.add_argument("path")
+    p_send.add_argument("--to", required=True, help="Kindle-Adresse, z. B. name@kindle.com")
+    p_send.set_defaults(func=cmd_send)
+
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"Fehler: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # bekannte App-Fehler sauber melden
+        # kindle-meta-eigene Ausnahmen tragen sprechende Meldungen.
+        if exc.__class__.__module__.startswith("kindle_meta"):
+            print(f"Fehler: {exc}", file=sys.stderr)
+            return 1
+        raise
 
 
 if __name__ == "__main__":

@@ -20,8 +20,11 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
 - **Cover-Auswahl**: Aus mehreren Treffern das beste Cover per Klick wählen.
-- **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern (`batch`).
+- **Cover-Optimierung**: Cover für die Kindle-Anzeige skalieren/zuschneiden (Pillow).
+- **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern – mit
+  Fortschrittsanzeige und Abbrechen in der GUI (`batch`).
 - **Schreiben**: Metadaten + Cover eingebettet zurück in die Datei.
+- **Send-to-Kindle**: fertige Bücher direkt an die `@kindle.com`-Adresse mailen.
 - **Konvertierung** nach AZW3/MOBI via Calibre (für ältere Kindles).
 
 ## Installation
@@ -64,11 +67,31 @@ kindle-meta apply   buch.epub \
 
 # Stapelverarbeitung: erst Trockenlauf, dann schreiben
 kindle-meta batch *.epub                    # nur Vorschläge anzeigen
-kindle-meta batch *.epub --apply --out-dir fertig/   # besten Vorschlag schreiben
+kindle-meta batch *.epub --apply --out-dir fertig/ --optimize-cover
+
+# Cover beim Schreiben optimieren
+kindle-meta apply buch.epub --optimize-cover --out fertig.epub
 
 # Kindle-Eigenformate (erfordert Calibre)
 kindle-meta info    buch.azw3
 kindle-meta convert fertig.epub --to azw3   # für ältere Kindles
+
+# Per Send-to-Kindle verschicken (SMTP-Config als Umgebungsvariablen, s. u.)
+kindle-meta send fertig.epub --to deingeraet@kindle.com
+```
+
+### Send-to-Kindle einrichten
+
+Amazon vergibt pro Gerät eine `@kindle.com`-Adresse. Die **Absenderadresse muss
+in den Amazon-Kontoeinstellungen als „genehmigte E-Mail" hinterlegt** sein. Die
+SMTP-Zugangsdaten kommen aus Umgebungsvariablen (keine Geheimnisse im Code):
+
+```bash
+export KINDLE_SMTP_HOST=smtp.gmail.com
+export KINDLE_SMTP_PORT=587          # 587 = STARTTLS, 465 = SSL
+export KINDLE_SMTP_USER=ich@gmail.com
+export KINDLE_SMTP_PASS=app-passwort # bei Gmail: App-Passwort
+export KINDLE_FROM=ich@gmail.com     # optional, Standard = KINDLE_SMTP_USER
 ```
 
 ## Auf den Kindle bringen
@@ -90,10 +113,12 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
 | `kindle_meta/providers.py`| Google Books & Open Library abfragen |
 | `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
+| `kindle_meta/covers.py`   | Cover für die Kindle-Anzeige optimieren (Pillow) |
+| `kindle_meta/sendmail.py` | Send-to-Kindle per SMTP-E-Mail |
 | `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
 | `kindle_meta/writers.py`  | Metadaten + Cover zurückschreiben |
-| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche mit Cover-Auswahl |
-| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert) |
+| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche (Cover-Auswahl, Stapel, Send) |
+| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.
 
@@ -106,9 +131,7 @@ pytest
 
 ## Roadmap
 
-- Cover-Zuschnitt/Optimierung für die Kindle-Anzeige.
-- Fortschrittsanzeige & Abbrechen im Stapellauf (GUI).
-- Direkter Send-to-Kindle-Versand per E-Mail aus der App.
+Siehe [PLAN.md](PLAN.md) für die geplanten nächsten Ausbaustufen.
 
 ## Lizenz
 

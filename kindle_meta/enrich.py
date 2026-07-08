@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Callable, Optional
 
 from . import llm, providers
 from .models import BookMetadata
@@ -127,6 +128,12 @@ class BatchOutcome:
         return self.error is None
 
 
+# Fortschritts-Callback: (index_ab_0, gesamt, aktuelle_datei, ergebnis) -> None.
+ProgressCallback = Callable[[int, int, str, "BatchOutcome"], None]
+# Abbruch-Check: gibt True zurück, wenn der Lauf gestoppt werden soll.
+CancelCheck = Callable[[], bool]
+
+
 def enrich_batch(
     paths: list[str],
     *,
@@ -134,6 +141,9 @@ def enrich_batch(
     out_dir: str | None = None,
     use_llm: bool = True,
     max_results: int = 5,
+    optimize_cover: bool = False,
+    progress: Optional[ProgressCallback] = None,
+    should_cancel: Optional[CancelCheck] = None,
 ) -> list[BatchOutcome]:
     """Reichert mehrere Dateien an und schreibt optional den besten Vorschlag.
 
@@ -141,19 +151,31 @@ def enrich_batch(
     den besten Vorschlag pro Datei – nach ``out_dir`` kopiert, falls angegeben,
     sonst in die Originaldatei. Nur Dateien mit mindestens einem Vorschlag
     werden geschrieben; Fehler einzelner Dateien brechen den Lauf nicht ab.
+
+    ``progress`` wird nach jeder Datei mit (Index, Gesamt, Pfad, Ergebnis)
+    aufgerufen. ``should_cancel`` wird vor jeder Datei geprüft – liefert es
+    ``True``, bricht der Lauf ab und gibt die bis dahin gesammelten Ergebnisse
+    zurück. So kann die GUI Fortschritt anzeigen und abbrechen.
     """
+    total = len(paths)
     outcomes: list[BatchOutcome] = []
-    for path in paths:
+    for index, path in enumerate(paths):
+        if should_cancel and should_cancel():
+            break
         outcome = BatchOutcome(path=path)
         try:
             result = enrich_file(path, use_llm=use_llm, max_results=max_results)
             outcome.result = result
             if apply and result.suggestions:
                 out_path = _out_path_for(path, out_dir)
-                outcome.written_to = write_metadata(result.best, out_path)
+                outcome.written_to = write_metadata(
+                    result.best, out_path, optimize_cover=optimize_cover
+                )
         except Exception as exc:  # einzelne Datei darf den Stapel nicht stoppen
             outcome.error = f"{type(exc).__name__}: {exc}"
         outcomes.append(outcome)
+        if progress:
+            progress(index, total, path, outcome)
     return outcomes
 
 

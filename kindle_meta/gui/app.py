@@ -23,23 +23,26 @@ from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from ..enrich import CoverCandidate, EnrichmentResult, enrich_metadata
+from ..enrich import CoverCandidate, EnrichmentResult, enrich_batch, enrich_metadata
 from ..models import BookMetadata
 from ..readers import read_metadata
 from ..writers import write_metadata
@@ -68,6 +71,45 @@ class Worker(QRunnable):
             self.signals.error.emit(traceback.format_exc())
 
 
+class BatchSignals(QObject):
+    progress = Signal(int, int, str)  # index, total, dateiname
+    done = Signal(object)             # list[BatchOutcome]
+    error = Signal(str)
+
+
+class BatchWorker(QRunnable):
+    """Führt einen Stapellauf im Hintergrund aus – mit Fortschritt & Abbruch."""
+
+    def __init__(self, paths, *, out_dir, use_llm, optimize_cover):
+        super().__init__()
+        self.paths = paths
+        self.out_dir = out_dir
+        self.use_llm = use_llm
+        self.optimize_cover = optimize_cover
+        self.signals = BatchSignals()
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            outcomes = enrich_batch(
+                self.paths,
+                apply=True,
+                out_dir=self.out_dir,
+                use_llm=self.use_llm,
+                optimize_cover=self.optimize_cover,
+                progress=lambda i, total, path, oc: self.signals.progress.emit(
+                    i, total, path.rsplit("/", 1)[-1]
+                ),
+                should_cancel=lambda: self._cancelled,
+            )
+            self.signals.done.emit(outcomes)
+        except Exception:
+            self.signals.error.emit(traceback.format_exc())
+
+
 # --------------------------------------------------------------------------- #
 # Hauptfenster
 # --------------------------------------------------------------------------- #
@@ -82,6 +124,8 @@ class MainWindow(QMainWindow):
         self._current_meta: BookMetadata | None = None
         self._suggestions: list[BookMetadata] = []
         self._cover_candidates: list[CoverCandidate] = []
+        self._batch_worker: BatchWorker | None = None
+        self._kindle_addr: str = ""
 
         self._build_ui()
         self.setAcceptDrops(True)
@@ -100,6 +144,22 @@ class MainWindow(QMainWindow):
         left.addWidget(QLabel("Bücher (Drag & Drop möglich)"))
         left.addWidget(self.file_list, 1)
         left.addWidget(add_btn)
+
+        # Stapelverarbeitung
+        left.addWidget(QLabel("Stapelverarbeitung"))
+        self.batch_optimize = QCheckBox("Cover für Kindle optimieren")
+        left.addWidget(self.batch_optimize)
+        self.batch_btn = QPushButton("Alle anreichern & speichern …")
+        self.batch_btn.clicked.connect(self._run_batch)
+        left.addWidget(self.batch_btn)
+        self.cancel_btn = QPushButton("Abbrechen")
+        self.cancel_btn.clicked.connect(self._cancel_batch)
+        self.cancel_btn.hide()
+        left.addWidget(self.cancel_btn)
+        self.progress = QProgressBar()
+        self.progress.hide()
+        left.addWidget(self.progress)
+
         root.addLayout(left, 1)
 
         # Rechte Spalte: Cover + Formular
@@ -166,7 +226,17 @@ class MainWindow(QMainWindow):
         actions.addWidget(self.suggestion_box, 1)
         actions.addWidget(self.search_btn)
         right.addLayout(actions)
-        right.addWidget(self.save_btn)
+
+        self.optimize_cover_cb = QCheckBox("Cover beim Speichern für Kindle optimieren")
+        right.addWidget(self.optimize_cover_cb)
+
+        save_row = QHBoxLayout()
+        save_row.addWidget(self.save_btn, 1)
+        self.send_btn = QPushButton("An Kindle senden …")
+        self.send_btn.clicked.connect(self._send_to_kindle)
+        self.send_btn.setEnabled(False)
+        save_row.addWidget(self.send_btn)
+        right.addLayout(save_row)
 
         self.status = QLabel("Bereit.")
         self.status.setStyleSheet("color: #555;")
@@ -224,6 +294,7 @@ class MainWindow(QMainWindow):
         self._fill_form(meta)
         self._set_form_enabled(True)
         self.save_btn.setEnabled(True)
+        self.send_btn.setEnabled(True)
         self.status.setText("Datei gelesen. Optional online anreichern.")
 
     # -- Formular <-> Modell ------------------------------------------------ #
@@ -348,7 +419,7 @@ class MainWindow(QMainWindow):
         meta = self._collect_form()
         self.status.setText("Schreibe Datei …")
         self.save_btn.setEnabled(False)
-        worker = Worker(write_metadata, meta)
+        worker = Worker(write_metadata, meta, optimize_cover=self.optimize_cover_cb.isChecked())
         worker.signals.result.connect(self._on_saved)
         worker.signals.error.connect(self._on_error)
         self.pool.start(worker)
@@ -358,10 +429,109 @@ class MainWindow(QMainWindow):
         self.status.setText(f"Gespeichert: {out_path}")
         QMessageBox.information(self, "Fertig", f"Metadaten geschrieben:\n{out_path}")
 
+    # -- Stapelverarbeitung ------------------------------------------------- #
+    def _run_batch(self) -> None:
+        paths = [
+            self.file_list.item(i).data(Qt.UserRole)
+            for i in range(self.file_list.count())
+        ]
+        if not paths:
+            QMessageBox.information(self, "Stapel", "Bitte zuerst Dateien hinzufügen.")
+            return
+        out_dir = QFileDialog.getExistingDirectory(
+            self, "Zielordner wählen (Abbrechen = Originale überschreiben)"
+        )
+        if not out_dir:
+            confirm = QMessageBox.question(
+                self, "Originale überschreiben?",
+                "Ohne Zielordner werden die Originaldateien überschrieben. Fortfahren?",
+            )
+            if confirm != QMessageBox.Yes:
+                return
+            out_dir = None
+
+        self.progress.setRange(0, len(paths))
+        self.progress.setValue(0)
+        self.progress.show()
+        self.cancel_btn.show()
+        self.batch_btn.setEnabled(False)
+
+        worker = BatchWorker(
+            paths,
+            out_dir=out_dir,
+            use_llm=True,
+            optimize_cover=self.batch_optimize.isChecked(),
+        )
+        worker.signals.progress.connect(self._on_batch_progress)
+        worker.signals.done.connect(self._on_batch_done)
+        worker.signals.error.connect(self._on_error)
+        self._batch_worker = worker
+        self.pool.start(worker)
+
+    def _cancel_batch(self) -> None:
+        if self._batch_worker:
+            self._batch_worker.cancel()
+            self.status.setText("Abbruch angefordert – laufende Datei wird noch beendet …")
+
+    def _on_batch_progress(self, index: int, total: int, name: str) -> None:
+        self.progress.setValue(index + 1)
+        self.status.setText(f"Stapel: {index + 1}/{total} – {name}")
+
+    def _on_batch_done(self, outcomes) -> None:
+        self.progress.hide()
+        self.cancel_btn.hide()
+        self.batch_btn.setEnabled(True)
+        self._batch_worker = None
+        written = sum(1 for o in outcomes if o.written_to)
+        errors = [o for o in outcomes if not o.ok]
+        msg = f"{written} von {len(outcomes)} Datei(en) geschrieben."
+        if errors:
+            msg += f"\n{len(errors)} Fehler:\n" + "\n".join(
+                f"• {e.path.rsplit('/', 1)[-1]}: {e.error}" for e in errors[:10]
+            )
+        self.status.setText(f"Stapel fertig: {msg.splitlines()[0]}")
+        QMessageBox.information(self, "Stapel fertig", msg)
+
+    # -- Send to Kindle ----------------------------------------------------- #
+    def _send_to_kindle(self) -> None:
+        if self._current_meta is None or not self._current_meta.source_path:
+            return
+        addr, ok = QInputDialog.getText(
+            self, "An Kindle senden",
+            "Kindle-E-Mail-Adresse (…@kindle.com):", text=self._kindle_addr,
+        )
+        if not ok or not addr.strip():
+            return
+        self._kindle_addr = addr.strip()
+
+        def _send():
+            from ..sendmail import send_to_kindle
+            send_to_kindle(self._current_meta.source_path, self._kindle_addr)
+            return self._kindle_addr
+
+        self.status.setText("Sende an Kindle …")
+        self.send_btn.setEnabled(False)
+        worker = Worker(_send)
+        worker.signals.result.connect(self._on_sent)
+        worker.signals.error.connect(self._on_error)
+        self.pool.start(worker)
+
+    def _on_sent(self, addr: str) -> None:
+        self.send_btn.setEnabled(True)
+        self.status.setText(f"An Kindle gesendet: {addr}")
+        QMessageBox.information(self, "Gesendet", f"Buch an {addr} gesendet.")
+
     # -- Hilfen ------------------------------------------------------------- #
     def _on_error(self, tb: str) -> None:
+        has_meta = self._current_meta is not None
         self.search_btn.setEnabled(True)
-        self.save_btn.setEnabled(self._current_meta is not None)
+        self.save_btn.setEnabled(has_meta)
+        self.send_btn.setEnabled(has_meta)
+        # Falls ein Stapellauf lief, Bedienelemente zurücksetzen.
+        self.batch_btn.setEnabled(True)
+        self.cancel_btn.hide()
+        self.progress.hide()
+        self._batch_worker = None
         self.status.setText("Fehler – siehe Dialog.")
         QMessageBox.critical(self, "Fehler", tb)
 

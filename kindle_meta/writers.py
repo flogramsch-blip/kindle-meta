@@ -23,15 +23,28 @@ class WriteError(Exception):
     pass
 
 
-def write_metadata(meta: BookMetadata, out_path: Optional[str] = None) -> str:
+def write_metadata(
+    meta: BookMetadata, out_path: Optional[str] = None, *, optimize_cover: bool = False
+) -> str:
     """Schreibt ``meta`` in die Datei ``meta.source_path``.
 
     Wenn ``out_path`` angegeben ist, wird die Originaldatei zuerst dorthin
     kopiert und die Kopie bearbeitet (Original bleibt unverändert). Gibt den
     Pfad der geschriebenen Datei zurück.
+
+    Mit ``optimize_cover=True`` wird ein vorhandenes Cover vor dem Schreiben
+    für die Kindle-Anzeige skaliert/komprimiert (benötigt Pillow).
     """
     if not meta.source_path:
         raise WriteError("meta.source_path ist nicht gesetzt")
+
+    if optimize_cover and meta.cover:
+        from . import covers  # lazy, damit Pillow optional bleibt
+
+        from dataclasses import replace as _replace
+
+        opt_bytes, opt_mime = covers.optimize_for_kindle(meta.cover)
+        meta = _replace(meta, cover=opt_bytes, cover_mime=opt_mime)
 
     src = meta.source_path
     target = out_path or src
