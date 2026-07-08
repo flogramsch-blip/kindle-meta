@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kindle-meta"
+version = "0.1.0"
+description = "E-Books (EPUB/PDF) lesen, analysieren und Kindle-taugliche Metadaten + Cover schreiben"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "ebooklib>=0.18",
+    "pypdf>=4.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.5"]
+llm = ["anthropic>=0.40"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+kindle-meta = "kindle_meta.cli:main"
+
+[project.gui-scripts]
+kindle-meta-gui = "kindle_meta.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["kindle_meta*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
