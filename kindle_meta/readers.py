@@ -73,6 +73,18 @@ def _read_epub(path: str) -> BookMetadata:
             meta.isbn = _clean_isbn(value)
             break
 
+    # Serien-Angaben (Calibre-Konvention) für Kindle-Sammlungen.
+    for value, attrs in book.get_metadata("OPF", "meta"):
+        name = (attrs or {}).get("name")
+        content = (attrs or {}).get("content")
+        if name == "calibre:series":
+            meta.series = content
+        elif name == "calibre:series_index" and content:
+            try:
+                meta.series_index = float(content)
+            except ValueError:
+                pass
+
     meta.cover, meta.cover_mime = _extract_epub_cover(book)
     meta.sample_text = _extract_epub_text(book)
     return meta

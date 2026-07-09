@@ -11,18 +11,19 @@ flexibel.
 
 ---
 
-## Meilenstein A — Robustheit & Datenhaltung
+## Meilenstein A — Robustheit & Datenhaltung ✅ (umgesetzt)
 Ziel: verlässlicher Alltagsbetrieb, nichts geht verloren.
 
-- [ ] **Automatisches Backup** der Originaldatei vor jedem Schreibvorgang
-      (`.bak` oder Papierkorb-Ordner) + „Rückgängig"-Funktion.
-- [ ] **Persistente Bibliothek (SQLite)**: importierte Bücher, letzter Status,
-      gewählte Vorschläge und die zuletzt genutzte Kindle-Adresse merken.
-- [ ] **Einstellungen sicher speichern**: SMTP-Zugang & Kindle-Adresse im
-      System-Schlüsselbund (`keyring`) statt nur Umgebungsvariablen.
-- [ ] **Serien-Metadaten** (`series`/`series_index`) für Kindle-Sammlungen
-      korrekt in EPUB (calibre:series-Meta) und via Calibre schreiben.
-- [ ] **Bessere ISBN-Erkennung**: ISBN aus Impressum/Text per Regex + Prüfziffer.
+- [x] **Automatisches Backup** der Originaldatei vor dem In-Place-Schreiben
+      (`backup.py`) + „Rückgängig"-Funktion (`kindle-meta undo`).
+- [x] **Persistente Bibliothek (SQLite)** (`library.py`): bearbeitete Bücher +
+      Status; Anzeige über `kindle-meta library`.
+- [x] **Einstellungen speichern** (`config.py`): Schlüsselbund via `keyring`,
+      sonst Datei-Fallback; App-Home unter `~/.kindle-meta`.
+- [x] **Serien-Metadaten** (`series`/`series_index`) in EPUB (calibre:series)
+      und via Calibre (`--series`/`--index`); GUI-Felder ergänzt.
+- [x] **Bessere ISBN-Erkennung** (`isbn.py`): ISBN aus Text per Regex +
+      Prüfziffer; wird beim Anreichern automatisch genutzt.
 
 ## Meilenstein B — Mehr Formate & Quellen
 Ziel: mehr Bücher abdecken, bessere Treffer.
@@ -60,8 +61,8 @@ Ziel: weniger Handarbeit, einfache Installation.
 
 ## Empfohlener nächster Schritt
 
-**Meilenstein A zuerst** – konkret die Kombination aus **Backup vor dem
-Schreiben** und **persistenter Bibliothek (SQLite)**. Beides erhöht die
-Alltagstauglichkeit sofort spürbar (nichts geht verloren, Wiederaufnahme
-möglich) und schafft die Datenbasis, auf der die GUI-Komfortfeatures aus
-Meilenstein C später aufsetzen.
+Meilenstein A ist abgeschlossen. Als Nächstes bietet sich **Meilenstein C**
+an – konkret die **Bibliotheks-Ansicht als Cover-Grid** und der
+**Einstellungen-Dialog** (SMTP/Kindle-Adresse), da die Datenbasis (SQLite +
+`config.Settings`) dafür bereits steht. Alternativ **Meilenstein B**
+(Spracherkennung + Trefferbewertung) für spürbar bessere Anreicherungs-Treffer.

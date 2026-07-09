@@ -95,6 +95,18 @@ def parse_ebook_meta_output(text: str) -> BookMetadata:
     m = re.search(r"isbn:([0-9Xx-]+)", ident)
     if m:
         meta.isbn = m.group(1).replace("-", "")
+    # Serie: "Meine Reihe [2]" oder "Meine Reihe #2".
+    series = fields.get("series")
+    if series:
+        sm = re.match(r"^(.*?)\s*[\[#]\s*([\d.]+)\]?\s*$", series)
+        if sm:
+            meta.series = sm.group(1).strip()
+            try:
+                meta.series_index = float(sm.group(2))
+            except ValueError:
+                pass
+        else:
+            meta.series = series
     return meta
 
 
@@ -156,6 +168,11 @@ def build_write_args(meta: BookMetadata) -> list[str]:
         args += ["--tags", ", ".join(meta.subjects)]
     if meta.isbn:
         args += ["--identifier", f"isbn:{meta.isbn}"]
+    if meta.series:
+        args += ["--series", meta.series]
+        if meta.series_index is not None:
+            idx = meta.series_index
+            args += ["--index", str(int(idx)) if float(idx).is_integer() else str(idx)]
     return args
 
 

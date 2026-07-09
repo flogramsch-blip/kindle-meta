@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 gui = ["PySide6>=6.5"]
 llm = ["anthropic>=0.40"]
+keyring = ["keyring>=24"]  # sichere Ablage von SMTP-Zugangsdaten
 dev = ["pytest>=7.0"]
 
 [project.scripts]

@@ -24,7 +24,11 @@ class WriteError(Exception):
 
 
 def write_metadata(
-    meta: BookMetadata, out_path: Optional[str] = None, *, optimize_cover: bool = False
+    meta: BookMetadata,
+    out_path: Optional[str] = None,
+    *,
+    optimize_cover: bool = False,
+    backup: bool = False,
 ) -> str:
     """Schreibt ``meta`` in die Datei ``meta.source_path``.
 
@@ -34,9 +38,19 @@ def write_metadata(
 
     Mit ``optimize_cover=True`` wird ein vorhandenes Cover vor dem Schreiben
     für die Kindle-Anzeige skaliert/komprimiert (benötigt Pillow).
+
+    Mit ``backup=True`` wird vor einem In-Place-Überschreiben eine
+    Sicherungskopie angelegt (siehe ``kindle_meta.backup``).
     """
     if not meta.source_path:
         raise WriteError("meta.source_path ist nicht gesetzt")
+
+    src = meta.source_path
+    writes_in_place = not out_path or os.path.abspath(out_path) == os.path.abspath(src)
+    if backup and writes_in_place and os.path.exists(src):
+        from . import backup as _backup  # lazy
+
+        _backup.create_backup(src)
 
     if optimize_cover and meta.cover:
         from . import covers  # lazy, damit Pillow optional bleibt
@@ -46,9 +60,8 @@ def write_metadata(
         opt_bytes, opt_mime = covers.optimize_for_kindle(meta.cover)
         meta = _replace(meta, cover=opt_bytes, cover_mime=opt_mime)
 
-    src = meta.source_path
     target = out_path or src
-    if out_path and os.path.abspath(out_path) != os.path.abspath(src):
+    if not writes_in_place:
         shutil.copy2(src, target)
 
     ext = os.path.splitext(target)[1].lower()
@@ -88,6 +101,16 @@ def _write_epub(meta: BookMetadata, path: str) -> None:
         for subj in meta.subjects:
             book.add_metadata("DC", "subject", subj)
 
+    # Serien-Angaben (Calibre-Konvention) – für Kindle-Sammlungen.
+    _set_calibre_meta(book, "calibre:series", meta.series)
+    if meta.series_index is not None:
+        # Ganzzahlen ohne Nachkommastelle darstellen (1 statt 1.0).
+        idx = meta.series_index
+        idx_str = str(int(idx)) if float(idx).is_integer() else str(idx)
+        _set_calibre_meta(book, "calibre:series_index", idx_str)
+    else:
+        _set_calibre_meta(book, "calibre:series_index", None)
+
     if meta.cover:
         _remove_existing_cover(book)
         ext = "jpg" if (meta.cover_mime or "").endswith("jpeg") else "png"
@@ -107,6 +130,22 @@ def _reset_dc(book, name: str, value: Optional[str], *, others: Optional[dict] =
     ns_map[name] = []
     if value:
         book.add_metadata("DC", name, value, others=others)
+
+
+_NS_OPF = "http://www.idpf.org/2007/opf"
+
+
+def _set_calibre_meta(book, name: str, value: Optional[str]) -> None:
+    """Setzt/entfernt ein ``<meta name=… content=…>`` im OPF (Calibre-Stil)."""
+    opf = book.metadata.setdefault(_NS_OPF, {})
+    entries = opf.get("meta", [])
+    # Vorhandene Einträge mit diesem Namen entfernen.
+    entries = [
+        (val, attrs) for val, attrs in entries if (attrs or {}).get("name") != name
+    ]
+    if value:
+        entries.append((None, {"name": name, "content": value}))
+    opf["meta"] = entries
 
 
 def _remove_existing_cover(book) -> None:

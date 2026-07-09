@@ -59,9 +59,28 @@ def cmd_apply(args) -> int:
         meta.published = args.date
     if args.isbn:
         meta.isbn = args.isbn
-    out = write_metadata(meta, args.out, optimize_cover=args.optimize_cover)
+    if args.series:
+        meta.series = args.series
+    if args.series_index is not None:
+        meta.series_index = args.series_index
+    out = write_metadata(
+        meta, args.out, optimize_cover=args.optimize_cover, backup=not args.no_backup
+    )
     print(f"Geschrieben: {out}")
+    _maybe_record(out, meta)
     return 0
+
+
+def _maybe_record(path: str, meta: BookMetadata) -> None:
+    """Bearbeitetes Buch in der Bibliothek vermerken (Fehler ignorieren)."""
+    try:
+        from .library import STATUS_WRITTEN, Library
+
+        with Library() as lib:
+            recorded = read_metadata(path)
+            lib.upsert(recorded, status=STATUS_WRITTEN)
+    except Exception:
+        pass
 
 
 def cmd_batch(args) -> int:
@@ -75,6 +94,7 @@ def cmd_batch(args) -> int:
         out_dir=args.out_dir,
         use_llm=not args.no_llm,
         optimize_cover=args.optimize_cover,
+        backup=not args.no_backup,
         progress=progress,
     )
     written = 0
@@ -90,6 +110,7 @@ def cmd_batch(args) -> int:
         if oc.written_to:
             line += f"  → geschrieben: {oc.written_to}"
             written += 1
+            _maybe_record(oc.written_to, oc.result.best)
         elif args.apply:
             line += "  (kein Vorschlag – übersprungen)"
         print(line)
@@ -116,6 +137,41 @@ def cmd_send(args) -> int:
     return 0
 
 
+def cmd_undo(args) -> int:
+    from .backup import list_backups, restore_latest
+
+    backups = list_backups(args.path)
+    if not backups:
+        print(f"Kein Backup für {args.path.rsplit('/', 1)[-1]} vorhanden.")
+        return 1
+    restore_latest(args.path)
+    print(f"Wiederhergestellt aus: {backups[0]}")
+    return 0
+
+
+def cmd_library(args) -> int:
+    from .library import Library
+
+    with Library() as lib:
+        books = lib.all()
+    if not books:
+        print("Bibliothek ist leer.")
+        return 0
+    print(f"{len(books)} Buch/Bücher in der Bibliothek:\n")
+    for meta in books:
+        if meta.series:
+            idx = meta.series_index
+            idx_str = ""
+            if idx is not None:
+                idx_str = f" #{int(idx) if float(idx).is_integer() else idx}"
+            series = f"  [{meta.series}{idx_str}]"
+        else:
+            series = ""
+        print(f"• {meta.title or '?'} — {meta.author_str or '?'}{series}")
+        print(f"    {meta.source_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kindle-meta", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -137,8 +193,13 @@ def main(argv: list[str] | None = None) -> int:
     p_apply.add_argument("--publisher")
     p_apply.add_argument("--date")
     p_apply.add_argument("--isbn")
+    p_apply.add_argument("--series", help="Serienname (für Kindle-Sammlungen)")
+    p_apply.add_argument("--series-index", type=float, help="Position in der Serie, z. B. 2")
     p_apply.add_argument(
         "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
+    p_apply.add_argument(
+        "--no-backup", action="store_true", help="kein Backup vor In-Place-Überschreiben"
     )
     p_apply.set_defaults(func=cmd_apply)
 
@@ -149,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
     p_batch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
     p_batch.add_argument(
         "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
+    p_batch.add_argument(
+        "--no-backup", action="store_true", help="kein Backup vor In-Place-Überschreiben"
     )
     p_batch.set_defaults(func=cmd_batch)
 
@@ -161,6 +225,13 @@ def main(argv: list[str] | None = None) -> int:
     p_send.add_argument("path")
     p_send.add_argument("--to", required=True, help="Kindle-Adresse, z. B. name@kindle.com")
     p_send.set_defaults(func=cmd_send)
+
+    p_undo = sub.add_parser("undo", help="Letztes Backup einer Datei wiederherstellen")
+    p_undo.add_argument("path")
+    p_undo.set_defaults(func=cmd_undo)
+
+    p_library = sub.add_parser("library", help="Bücher in der Bibliothek auflisten")
+    p_library.set_defaults(func=cmd_library)
 
     args = parser.parse_args(argv)
     try:

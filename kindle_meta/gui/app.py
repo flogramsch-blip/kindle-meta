@@ -80,12 +80,13 @@ class BatchSignals(QObject):
 class BatchWorker(QRunnable):
     """Führt einen Stapellauf im Hintergrund aus – mit Fortschritt & Abbruch."""
 
-    def __init__(self, paths, *, out_dir, use_llm, optimize_cover):
+    def __init__(self, paths, *, out_dir, use_llm, optimize_cover, backup):
         super().__init__()
         self.paths = paths
         self.out_dir = out_dir
         self.use_llm = use_llm
         self.optimize_cover = optimize_cover
+        self.backup = backup
         self.signals = BatchSignals()
         self._cancelled = False
 
@@ -100,6 +101,7 @@ class BatchWorker(QRunnable):
                 out_dir=self.out_dir,
                 use_llm=self.use_llm,
                 optimize_cover=self.optimize_cover,
+                backup=self.backup,
                 progress=lambda i, total, path, oc: self.signals.progress.emit(
                     i, total, path.rsplit("/", 1)[-1]
                 ),
@@ -183,6 +185,9 @@ class MainWindow(QMainWindow):
         self.f_date = QLineEdit()
         self.f_isbn = QLineEdit()
         self.f_language = QLineEdit()
+        self.f_series = QLineEdit()
+        self.f_series_index = QLineEdit()
+        self.f_series_index.setPlaceholderText("z. B. 2")
         self.f_desc = QTextEdit()
         self.f_desc.setMaximumHeight(90)
         form.addRow("Titel", self.f_title)
@@ -191,6 +196,8 @@ class MainWindow(QMainWindow):
         form.addRow("Datum", self.f_date)
         form.addRow("ISBN", self.f_isbn)
         form.addRow("Sprache", self.f_language)
+        form.addRow("Serie", self.f_series)
+        form.addRow("Serien-Nr.", self.f_series_index)
         form.addRow("Beschreibung", self.f_desc)
 
         top = QHBoxLayout()
@@ -227,8 +234,14 @@ class MainWindow(QMainWindow):
         actions.addWidget(self.search_btn)
         right.addLayout(actions)
 
+        opts_row = QHBoxLayout()
         self.optimize_cover_cb = QCheckBox("Cover beim Speichern für Kindle optimieren")
-        right.addWidget(self.optimize_cover_cb)
+        self.backup_cb = QCheckBox("Backup vor Überschreiben")
+        self.backup_cb.setChecked(True)
+        opts_row.addWidget(self.optimize_cover_cb)
+        opts_row.addWidget(self.backup_cb)
+        opts_row.addStretch(1)
+        right.addLayout(opts_row)
 
         save_row = QHBoxLayout()
         save_row.addWidget(self.save_btn, 1)
@@ -305,12 +318,19 @@ class MainWindow(QMainWindow):
         self.f_date.setText(meta.published or "")
         self.f_isbn.setText(meta.isbn or "")
         self.f_language.setText(meta.language or "")
+        self.f_series.setText(meta.series or "")
+        self.f_series_index.setText("" if meta.series_index is None else _fmt_index(meta.series_index))
         self.f_desc.setPlainText(meta.description or "")
         self._show_cover(meta)
 
     def _collect_form(self) -> BookMetadata:
         assert self._current_meta is not None
         authors = [a.strip() for a in self.f_author.text().split(",") if a.strip()]
+        index_text = self.f_series_index.text().strip().replace(",", ".")
+        try:
+            series_index = float(index_text) if index_text else None
+        except ValueError:
+            series_index = None
         return replace(
             self._current_meta,
             title=self.f_title.text().strip() or None,
@@ -319,6 +339,8 @@ class MainWindow(QMainWindow):
             published=self.f_date.text().strip() or None,
             isbn=self.f_isbn.text().strip() or None,
             language=self.f_language.text().strip() or None,
+            series=self.f_series.text().strip() or None,
+            series_index=series_index,
             description=self.f_desc.toPlainText().strip() or None,
         )
 
@@ -419,7 +441,12 @@ class MainWindow(QMainWindow):
         meta = self._collect_form()
         self.status.setText("Schreibe Datei …")
         self.save_btn.setEnabled(False)
-        worker = Worker(write_metadata, meta, optimize_cover=self.optimize_cover_cb.isChecked())
+        worker = Worker(
+            write_metadata,
+            meta,
+            optimize_cover=self.optimize_cover_cb.isChecked(),
+            backup=self.backup_cb.isChecked(),
+        )
         worker.signals.result.connect(self._on_saved)
         worker.signals.error.connect(self._on_error)
         self.pool.start(worker)
@@ -461,6 +488,7 @@ class MainWindow(QMainWindow):
             out_dir=out_dir,
             use_llm=True,
             optimize_cover=self.batch_optimize.isChecked(),
+            backup=self.backup_cb.isChecked(),
         )
         worker.signals.progress.connect(self._on_batch_progress)
         worker.signals.done.connect(self._on_batch_done)
@@ -538,9 +566,15 @@ class MainWindow(QMainWindow):
     def _set_form_enabled(self, enabled: bool) -> None:
         for w in (
             self.f_title, self.f_author, self.f_publisher, self.f_date,
-            self.f_isbn, self.f_language, self.f_desc, self.search_btn,
+            self.f_isbn, self.f_language, self.f_series, self.f_series_index,
+            self.f_desc, self.search_btn,
         ):
             w.setEnabled(enabled)
+
+
+def _fmt_index(value: float) -> str:
+    """Serien-Index ohne unnötige Nachkommastelle (1 statt 1.0)."""
+    return str(int(value)) if float(value).is_integer() else str(value)
 
 
 def main() -> int:

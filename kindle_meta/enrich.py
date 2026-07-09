@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from . import isbn as isbn_mod
 from . import llm, providers
 from .models import BookMetadata
 from .readers import read_metadata
@@ -91,6 +92,12 @@ def enrich_metadata(
     working = original
     used_llm = False
 
+    # ISBN aus dem Text ziehen, wenn die Datei keine trägt (präziseste Suche).
+    if not working.isbn:
+        found = isbn_mod.find_isbn(working.sample_text)
+        if found:
+            working = working.merged_with(BookMetadata(isbn=found), prefer_other=True)
+
     # KI-Fallback nur wenn Titel oder Autor fehlt.
     if use_llm and (not working.title or not working.authors):
         guess = llm.guess_metadata(working.sample_text or "")
@@ -142,6 +149,7 @@ def enrich_batch(
     use_llm: bool = True,
     max_results: int = 5,
     optimize_cover: bool = False,
+    backup: bool = False,
     progress: Optional[ProgressCallback] = None,
     should_cancel: Optional[CancelCheck] = None,
 ) -> list[BatchOutcome]:
@@ -169,7 +177,7 @@ def enrich_batch(
             if apply and result.suggestions:
                 out_path = _out_path_for(path, out_dir)
                 outcome.written_to = write_metadata(
-                    result.best, out_path, optimize_cover=optimize_cover
+                    result.best, out_path, optimize_cover=optimize_cover, backup=backup
                 )
         except Exception as exc:  # einzelne Datei darf den Stapel nicht stoppen
             outcome.error = f"{type(exc).__name__}: {exc}"

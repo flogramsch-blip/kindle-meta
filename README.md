@@ -25,6 +25,10 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
   Fortschrittsanzeige und Abbrechen in der GUI (`batch`).
 - **Schreiben**: Metadaten + Cover eingebettet zurück in die Datei.
 - **Send-to-Kindle**: fertige Bücher direkt an die `@kindle.com`-Adresse mailen.
+- **Serien-Metadaten**: `series`/`series_index` für Kindle-Sammlungen (EPUB & Calibre).
+- **Backup & Undo**: automatische Sicherung vor dem Überschreiben, Wiederherstellung per `undo`.
+- **Bibliothek (SQLite)**: bearbeitete Bücher + Status bleiben über Sitzungen erhalten.
+- **ISBN-Erkennung**: gültige ISBN aus dem Text (Impressum) automatisch ziehen.
 - **Konvertierung** nach AZW3/MOBI via Calibre (für ältere Kindles).
 
 ## Installation
@@ -69,8 +73,10 @@ kindle-meta apply   buch.epub \
 kindle-meta batch *.epub                    # nur Vorschläge anzeigen
 kindle-meta batch *.epub --apply --out-dir fertig/ --optimize-cover
 
-# Cover beim Schreiben optimieren
-kindle-meta apply buch.epub --optimize-cover --out fertig.epub
+# Cover optimieren + Serie setzen (Backup automatisch beim In-Place-Schreiben)
+kindle-meta apply buch.epub --optimize-cover --series "Die Chroniken" --series-index 2
+kindle-meta undo    buch.epub               # letztes Backup wiederherstellen
+kindle-meta library                         # bearbeitete Bücher auflisten
 
 # Kindle-Eigenformate (erfordert Calibre)
 kindle-meta info    buch.azw3
@@ -115,10 +121,14 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
 | `kindle_meta/covers.py`   | Cover für die Kindle-Anzeige optimieren (Pillow) |
 | `kindle_meta/sendmail.py` | Send-to-Kindle per SMTP-E-Mail |
+| `kindle_meta/isbn.py`     | ISBN aus Text erkennen & validieren |
+| `kindle_meta/backup.py`   | Sicherungskopien anlegen/wiederherstellen |
+| `kindle_meta/library.py`  | SQLite-Bibliothek: bearbeitete Bücher + Status |
+| `kindle_meta/config.py`   | App-Verzeichnis & Einstellungen (keyring optional) |
 | `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
-| `kindle_meta/writers.py`  | Metadaten + Cover zurückschreiben |
+| `kindle_meta/writers.py`  | Metadaten + Cover + Serie zurückschreiben |
 | `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche (Cover-Auswahl, Stapel, Send) |
-| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send) |
+| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send/undo/library) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.
 
