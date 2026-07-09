@@ -13,12 +13,15 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
 
 ## Funktionen
 
-- **Lesen**: EPUB & PDF nativ, **MOBI/AZW3/AZW** via Calibre – vorhandene
-  Metadaten + Textprobe der ersten Seiten.
-- **Anreichern** aus drei Quellen:
-  1. **Online-Datenbanken** – Google Books & Open Library (Cover, Verlag, Datum, ISBN, Seiten).
+- **Lesen**: EPUB, PDF & **FB2** nativ, **MOBI/AZW3/AZW** via Calibre –
+  vorhandene Metadaten + Textprobe der ersten Seiten.
+- **Anreichern** aus mehreren Quellen:
+  1. **Online-Datenbanken** – Google Books, Open Library & **DNB** (Deutsche
+     Nationalbibliothek, stark bei deutschen Titeln).
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
+- **Beste Treffer zuerst**: Vorschläge werden per Ähnlichkeit (Titel/Autor/ISBN) sortiert.
+- **Spracherkennung**: Sprache aus dem Text bestimmen (setzt `language`).
 - **Bibliotheks-Ansicht**: eigener Tab mit Cover-Grid, Suche und Doppelklick-Öffnen.
 - **Einstellungen-Dialog**: SMTP-Zugang & Kindle-Adresse in der GUI hinterlegen.
 - **Cover-Auswahl & -Editor**: bestes Cover per Klick wählen, direkt drehen (↺/↻).
@@ -126,7 +129,9 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/models.py`   | `BookMetadata` – zentrales Datenmodell + Merge-Logik |
 | `kindle_meta/readers.py`  | EPUB/PDF einlesen (Metadaten + Textprobe) |
 | `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
-| `kindle_meta/providers.py`| Google Books & Open Library abfragen |
+| `kindle_meta/providers.py`| Google Books, Open Library & DNB abfragen |
+| `kindle_meta/matching.py` | Vorschläge nach Ähnlichkeit bewerten/sortieren |
+| `kindle_meta/lang.py`     | Spracherkennung über Stoppwörter (ohne Abhängigkeit) |
 | `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
 | `kindle_meta/covers.py`   | Cover für die Kindle-Anzeige optimieren (Pillow) |
 | `kindle_meta/sendmail.py` | Send-to-Kindle per SMTP-E-Mail |

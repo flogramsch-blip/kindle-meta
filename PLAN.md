@@ -25,16 +25,18 @@ Ziel: verlässlicher Alltagsbetrieb, nichts geht verloren.
 - [x] **Bessere ISBN-Erkennung** (`isbn.py`): ISBN aus Text per Regex +
       Prüfziffer; wird beim Anreichern automatisch genutzt.
 
-## Meilenstein B — Mehr Formate & Quellen
+## Meilenstein B — Mehr Formate & Quellen (teilweise umgesetzt)
 Ziel: mehr Bücher abdecken, bessere Treffer.
 
-- [ ] Weitere Formate: **FB2**, **CBZ/CBR** (Comics), optional DjVu.
-- [ ] Zusätzliche Metadatenquelle **Deutsche Nationalbibliothek (DNB/SRU)** –
-      besonders gut für deutschsprachige Titel.
-- [ ] **Spracherkennung** (`langdetect`) auf der Textprobe → gezieltere Suche
-      und automatisches Setzen von `language`.
-- [ ] **Trefferbewertung**: Vorschläge nach Ähnlichkeit zu Datei-Metadaten
-      sortieren (Titel/Autor-Fuzzy-Score) statt nur Provider-Reihenfolge.
+- [x] Format **FB2** (FictionBook) lesen inkl. Cover (`readers._read_fb2`).
+- [x] Zusätzliche Metadatenquelle **Deutsche Nationalbibliothek (DNB/SRU)**
+      (`providers.search_dnb`), mit ISBN-Validierung und Rollen-Bereinigung.
+- [x] **Spracherkennung** (`lang.py`, stoppwortbasiert, ohne Abhängigkeit) →
+      setzt `language` automatisch beim Anreichern.
+- [x] **Trefferbewertung** (`matching.py`): Vorschläge nach Ähnlichkeit
+      (Titel/Autor/ISBN) sortiert, bester zuerst.
+- [ ] Weitere Formate: **CBZ/CBR** (Comics, ComicInfo.xml), optional DjVu.
+- [ ] `langRestrict`/Sprachfilter in der Online-Suche nutzen.
 
 ## Meilenstein C — GUI-Komfort (teilweise umgesetzt)
 Ziel: schnelleres, angenehmeres Arbeiten.
@@ -64,9 +66,9 @@ Ziel: weniger Handarbeit, einfache Installation.
 
 ## Empfohlener nächster Schritt
 
-Meilenstein A ist abgeschlossen, der Kern von Meilenstein C (Bibliotheks-Grid,
-Einstellungen-Dialog, Cover-Drehen) ebenfalls. Als Nächstes bietet sich
-**Meilenstein B** an – **Spracherkennung** (`langdetect`) und
-**Fuzzy-Trefferbewertung**, um die Online-Anreicherung spürbar treffsicherer zu
-machen. Danach die restlichen C-Punkte (Vorschläge feldweise übernehmen,
-interaktiver Cover-Zuschnitt, Mehrfachauswahl).
+Meilenstein A ist abgeschlossen; die Kerne von B (Spracherkennung, DNB,
+Fuzzy-Ranking, FB2) und C (Bibliotheks-Grid, Einstellungen, Cover-Drehen)
+ebenfalls. Als Nächstes bietet sich **Meilenstein D** an – zuerst **CI mit
+GitHub Actions** (Tests bei jedem Push absichern) und **Packaging** mit
+PyInstaller (Ein-Klick-App ohne Python). Alternativ die restlichen
+Komfort-Punkte aus C (Vorschläge feldweise übernehmen, Mehrfachauswahl).

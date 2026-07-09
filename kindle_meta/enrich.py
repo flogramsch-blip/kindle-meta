@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import isbn as isbn_mod
-from . import llm, providers
+from . import lang, llm, matching, providers
 from .models import BookMetadata
 from .readers import read_metadata
 from .writers import write_metadata
@@ -98,6 +98,12 @@ def enrich_metadata(
         if found:
             working = working.merged_with(BookMetadata(isbn=found), prefer_other=True)
 
+    # Sprache erkennen, wenn nicht gesetzt (gezieltere Suche, korrektes Feld).
+    if not working.language:
+        detected = lang.detect(working.sample_text)
+        if detected:
+            working = working.merged_with(BookMetadata(language=detected), prefer_other=True)
+
     # KI-Fallback nur wenn Titel oder Autor fehlt.
     if use_llm and (not working.title or not working.authors):
         guess = llm.guess_metadata(working.sample_text or "")
@@ -114,6 +120,9 @@ def enrich_metadata(
     query = build_query(working)
     if query:
         suggestions.extend(providers.search(query, max_results=max_results))
+
+    # Beste Treffer nach oben: nach Ähnlichkeit zu den bekannten Werten sortieren.
+    suggestions = matching.rank(working, suggestions)
 
     return EnrichmentResult(original=original, suggestions=suggestions, used_llm=used_llm)
 

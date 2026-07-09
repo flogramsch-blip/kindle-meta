@@ -27,13 +27,15 @@ def read_metadata(path: str) -> BookMetadata:
         meta = _read_epub(path)
     elif ext == ".pdf":
         meta = _read_pdf(path)
+    elif ext == ".fb2":
+        meta = _read_fb2(path)
     elif ext in _CALIBRE_EXTENSIONS:
         from . import calibre  # lazy, damit Calibre optional bleibt
 
         meta = calibre.read_metadata(path)
     else:
         raise UnsupportedFormat(
-            f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf, .mobi, .azw3, .azw)"
+            f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf, .fb2, .mobi, .azw3, .azw)"
         )
     meta.source_path = path
     return meta
@@ -172,6 +174,91 @@ def _pdf_str(value) -> Optional[str]:
         return None
     s = str(value).strip()
     return s or None
+
+
+# --------------------------------------------------------------------------- #
+# FB2 (FictionBook) – XML-Format
+# --------------------------------------------------------------------------- #
+def _read_fb2(path: str) -> BookMetadata:
+    import base64
+    import xml.etree.ElementTree as ET
+
+    def local(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
+
+    root = ET.parse(path).getroot()
+
+    def find_first(parent, name):
+        for el in parent.iter():
+            if local(el.tag) == name:
+                return el
+        return None
+
+    meta = BookMetadata()
+    title_info = find_first(root, "title-info")
+    if title_info is not None:
+        for el in title_info:
+            name = local(el.tag)
+            if name == "book-title" and el.text:
+                meta.title = el.text.strip()
+            elif name == "author":
+                parts = [
+                    (c.text or "").strip()
+                    for c in el
+                    if local(c.tag) in ("first-name", "middle-name", "last-name")
+                ]
+                full = " ".join(p for p in parts if p)
+                if full:
+                    meta.authors.append(full)
+            elif name == "lang" and el.text:
+                meta.language = el.text.strip()
+            elif name == "genre" and el.text:
+                meta.subjects.append(el.text.strip())
+            elif name == "annotation":
+                text = " ".join(t.strip() for t in el.itertext() if t.strip())
+                if text:
+                    meta.description = text
+
+    publish_info = find_first(root, "publish-info")
+    if publish_info is not None:
+        for el in publish_info:
+            name = local(el.tag)
+            if name == "publisher" and el.text:
+                meta.publisher = el.text.strip()
+            elif name == "year" and el.text:
+                meta.published = el.text.strip()
+            elif name == "isbn" and el.text:
+                meta.isbn = _clean_isbn(el.text)
+
+    # Cover: <coverpage><image href="#id"/></coverpage> -> <binary id="id">.
+    cover_id = _fb2_cover_id(root, local)
+    if cover_id:
+        for el in root.iter():
+            if local(el.tag) == "binary" and el.get("id") == cover_id:
+                try:
+                    meta.cover = base64.b64decode((el.text or "").strip())
+                    meta.cover_mime = el.get("content-type", "image/jpeg")
+                except Exception:
+                    pass
+                break
+
+    # Textprobe aus dem <body>.
+    body = find_first(root, "body")
+    if body is not None:
+        text = " ".join(t.strip() for t in body.itertext() if t.strip())
+        meta.sample_text = text[:SAMPLE_CHARS]
+    return meta
+
+
+def _fb2_cover_id(root, local) -> Optional[str]:
+    for el in root.iter():
+        if local(el.tag) == "coverpage":
+            for img in el.iter():
+                if local(img.tag) == "image":
+                    for key, val in img.attrib.items():
+                        if local(key) == "href" and val:
+                            return val.lstrip("#")
+    return None
 
 
 # --------------------------------------------------------------------------- #
