@@ -11,6 +11,46 @@ Ein Kindle zeigt Cover und Metadaten nur zuverlässig an, wenn sie **in der Date
 eingebettet** sind – die Datei umzubenennen reicht nicht. `kindle-meta` schreibt
 die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictionary).
 
+## Schnellstart (für Einsteiger)
+
+Du brauchst **Python 3.10 oder neuer**. Prüfen kannst du das im Terminal
+(macOS/Linux) bzw. in der Eingabeaufforderung/PowerShell (Windows):
+
+```bash
+python3 --version
+```
+
+Fehlt Python, lade es von [python.org](https://www.python.org/downloads/)
+(bei Windows im Installer **„Add Python to PATH"** ankreuzen).
+
+**In 4 Schritten zur laufenden App:**
+
+```bash
+# 1) Projekt herunterladen
+git clone https://github.com/flogramsch-blip/kindle-meta.git
+cd kindle-meta
+
+# 2) App inkl. grafischer Oberfläche installieren
+pip install -e ".[gui]"
+
+# 3) App starten
+kindle-meta-gui
+```
+
+**4) In der App:**
+1. Buch per Knopf oder **Drag & Drop** hinzufügen.
+2. Buch anklicken → vorhandene Angaben erscheinen.
+3. **„Online suchen / anreichern"** → passenden Vorschlag wählen (oder Felder selbst ausfüllen).
+4. **„Speichern"** → fertig, die Datei ist jetzt Kindle-tauglich.
+
+> 💡 Kein Terminal-Fan? Weiter unten unter
+> [Als eigenständige App verpacken](#als-eigenständige-app-verpacken) steht, wie
+> daraus eine Ein-Klick-App ohne Python entsteht.
+
+**Aufs Gerät bringen:** Das fertige Buch (EPUB) per **Send-to-Kindle**
+(App/E-Mail) oder USB auf den Kindle kopieren – Cover und Angaben erscheinen dann
+korrekt. Für ältere Geräte siehe [Auf den Kindle bringen](#auf-den-kindle-bringen).
+
 ## Funktionen
 
 - **Lesen**: EPUB, PDF, **FB2** & **Comics (CBZ/CBR)** nativ, **MOBI/AZW3/AZW**
