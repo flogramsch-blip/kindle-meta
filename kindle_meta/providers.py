@@ -25,17 +25,42 @@ DNB_SRU_URL = "https://services.dnb.de/sru/dnb"
 _TIMEOUT = 15
 
 
-def search(query: str, *, max_results: int = 5, fetch_covers: bool = True) -> list[BookMetadata]:
+def search(
+    query: str,
+    *,
+    max_results: int = 5,
+    fetch_covers: bool = True,
+    language: Optional[str] = None,
+) -> list[BookMetadata]:
     """Sucht bei allen Providern und liefert eine kombinierte Kandidatenliste.
 
     Google-Books-Treffer stehen vorn (meist die reichhaltigsten Metadaten),
-    danach Open Library als Ergänzung.
+    danach Open Library und DNB. ``language`` (ISO-Code) schränkt die
+    Google-Books-Suche optional auf diese Sprache ein.
     """
     results: list[BookMetadata] = []
-    results.extend(search_google_books(query, max_results=max_results, fetch_covers=fetch_covers))
+    results.extend(search_google_books(
+        query, max_results=max_results, fetch_covers=fetch_covers, language=language
+    ))
     results.extend(search_openlibrary(query, max_results=max_results, fetch_covers=fetch_covers))
     results.extend(search_dnb(query, max_results=max_results))
     return results
+
+
+# Häufige 3-Buchstaben-Codes (MARC) auf ISO-639-1 abbilden (für langRestrict).
+_LANG_2LETTER = {
+    "ger": "de", "deu": "de", "eng": "en", "fre": "fr", "fra": "fr",
+    "spa": "es", "ita": "it", "dut": "nl", "nld": "nl", "por": "pt",
+}
+
+
+def _lang2(language: Optional[str]) -> Optional[str]:
+    if not language:
+        return None
+    code = language.strip().lower()
+    if len(code) == 2:
+        return code
+    return _LANG_2LETTER.get(code)
 
 
 def search_by_isbn(isbn: str, *, fetch_covers: bool = True) -> Optional[BookMetadata]:
@@ -51,14 +76,18 @@ def search_by_isbn(isbn: str, *, fetch_covers: bool = True) -> Optional[BookMeta
 # Google Books
 # --------------------------------------------------------------------------- #
 def search_google_books(
-    query: str, *, max_results: int = 5, fetch_covers: bool = True
+    query: str, *, max_results: int = 5, fetch_covers: bool = True, language: Optional[str] = None
 ) -> list[BookMetadata]:
     import requests
 
+    params = {"q": query, "maxResults": max_results}
+    lang2 = _lang2(language)
+    if lang2:
+        params["langRestrict"] = lang2
     try:
         resp = requests.get(
             GOOGLE_BOOKS_URL,
-            params={"q": query, "maxResults": max_results},
+            params=params,
             timeout=_TIMEOUT,
         )
         resp.raise_for_status()

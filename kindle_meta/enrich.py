@@ -125,7 +125,9 @@ def enrich_metadata(
 
     query = build_query(working)
     if query:
-        suggestions.extend(providers.search(query, max_results=max_results))
+        suggestions.extend(
+            providers.search(query, max_results=max_results, language=working.language)
+        )
 
     # Beste Treffer nach oben: nach Ähnlichkeit zu den bekannten Werten sortieren.
     suggestions = matching.rank(working, suggestions)

@@ -93,3 +93,46 @@ def test_settings_dialog_saves(qapp):
     dlg.inputs["kindle_addr"].setText("me@kindle.com")
     dlg._save()
     assert Settings().get("kindle_addr") == "me@kindle.com"
+
+
+def test_compare_dialog_combines_fields(qapp):
+    from kindle_meta.gui.app import CompareDialog
+    from kindle_meta.models import BookMetadata
+
+    orig = BookMetadata(title="Datei", authors=["Alt"], source_path="/x/y.epub")
+    sugg = [BookMetadata(title="Online", authors=["Neu"], publisher="V")]
+    dlg = CompareDialog(orig, sugg)
+    dlg._boxes["title"].setCurrentText("Datei")     # aus der Datei
+    dlg._boxes["authors"].setCurrentText("Neu")     # aus dem Vorschlag
+    dlg._boxes["publisher"].setCurrentText("V")
+    res = dlg.result_metadata()
+    assert res.title == "Datei"
+    assert res.authors == ["Neu"]
+    assert res.publisher == "V"
+    assert res.source_path == "/x/y.epub"           # Herkunft bleibt erhalten
+
+
+def test_crop_dialog_produces_cover(qapp):
+    import io
+
+    from PIL import Image
+    from PySide6.QtCore import QRect
+
+    from kindle_meta.gui.app import CropDialog
+
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 450), (50, 80, 120)).save(buf, "PNG")
+    dlg = CropDialog(buf.getvalue())
+    dlg.image.selection = QRect(10, 10, 120, 160)
+    dlg._crop()
+    assert dlg.result_cover and dlg.result_cover[:2] == b"\xff\xd8"  # JPEG
+
+
+def test_multiselect_remove(qapp):
+    w = _make_window(qapp)
+    w._add_file("/x/a.epub")
+    w._add_file("/x/b.epub")
+    w.file_list.selectAll()
+    assert len(w._selected_paths()) == 2
+    w._remove_selected()
+    assert w.file_list.count() == 0

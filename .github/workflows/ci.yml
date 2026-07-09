@@ -33,7 +33,7 @@ jobs:
       - name: Lint (ruff)
         run: ruff check kindle_meta tests
 
-      - name: Tests (pytest, headless Qt)
+      - name: Tests (pytest, headless Qt, mit Coverage)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q
+        run: pytest -q --cov=kindle_meta --cov-report=term-missing

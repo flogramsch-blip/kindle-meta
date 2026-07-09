@@ -12,7 +12,7 @@ import time
 from typing import Callable, Iterable, Optional
 
 # Von der App unterstützte Endungen.
-SUPPORTED_EXTS = (".epub", ".pdf", ".fb2", ".mobi", ".azw3", ".azw")
+SUPPORTED_EXTS = (".epub", ".pdf", ".fb2", ".cbz", ".cbr", ".mobi", ".azw3", ".azw")
 
 
 class FolderWatcher:

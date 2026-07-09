@@ -29,13 +29,16 @@ def read_metadata(path: str) -> BookMetadata:
         meta = _read_pdf(path)
     elif ext == ".fb2":
         meta = _read_fb2(path)
+    elif ext in (".cbz", ".cbr"):
+        meta = _read_comic(path, ext)
     elif ext in _CALIBRE_EXTENSIONS:
         from . import calibre  # lazy, damit Calibre optional bleibt
 
         meta = calibre.read_metadata(path)
     else:
         raise UnsupportedFormat(
-            f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf, .fb2, .mobi, .azw3, .azw)"
+            f"Kein Reader für '{ext}' (unterstützt: .epub, .pdf, .fb2, .cbz, .cbr, "
+            ".mobi, .azw3, .azw)"
         )
     meta.source_path = path
     return meta
@@ -248,6 +251,109 @@ def _read_fb2(path: str) -> BookMetadata:
         text = " ".join(t.strip() for t in body.itertext() if t.strip())
         meta.sample_text = text[:SAMPLE_CHARS]
     return meta
+
+
+# --------------------------------------------------------------------------- #
+# Comics: CBZ (ZIP) und CBR (RAR)
+# --------------------------------------------------------------------------- #
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+
+def _read_comic(path: str, ext: str) -> BookMetadata:
+    """Liest CBZ/CBR: ComicInfo.xml (falls vorhanden) + erstes Bild als Cover."""
+    if ext == ".cbz":
+        names, opener = _cbz_entries(path)
+    else:
+        names, opener = _cbr_entries(path)
+
+    meta = BookMetadata()
+    # ComicInfo.xml -> Metadaten.
+    for name in names:
+        if name.lower().endswith("comicinfo.xml"):
+            _parse_comicinfo(opener(name), meta)
+            break
+
+    # Erstes Bild (alphabetisch) als Cover.
+    images = sorted(n for n in names if n.lower().endswith(_IMAGE_EXTS))
+    if images:
+        data = opener(images[0])
+        if data:
+            meta.cover = data
+            meta.cover_mime = _image_mime(images[0])
+    return meta
+
+
+def _cbz_entries(path: str):
+    import zipfile
+
+    zf = zipfile.ZipFile(path)
+    names = zf.namelist()
+
+    def opener(name: str) -> bytes:
+        with zf.open(name) as fh:
+            return fh.read()
+
+    return names, opener
+
+
+def _cbr_entries(path: str):
+    try:
+        import rarfile
+    except ImportError as exc:
+        raise UnsupportedFormat(
+            "CBR (RAR) benötigt das Paket 'rarfile' und ein entpacktes 'unrar'/'unar' "
+            "im PATH. Alternativ das Comic als CBZ speichern."
+        ) from exc
+
+    rf = rarfile.RarFile(path)
+    names = rf.namelist()
+
+    def opener(name: str) -> bytes:
+        with rf.open(name) as fh:
+            return fh.read()
+
+    return names, opener
+
+
+def _parse_comicinfo(xml: bytes, meta: BookMetadata) -> None:
+    import xml.etree.ElementTree as ET
+
+    def local(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return
+    fields = {local(el.tag): (el.text or "").strip() for el in root if el.text}
+
+    meta.title = fields.get("Title") or meta.title
+    meta.series = fields.get("Series") or meta.series
+    if fields.get("Number"):
+        try:
+            meta.series_index = float(fields["Number"])
+        except ValueError:
+            pass
+    writer = fields.get("Writer") or fields.get("Penciller")
+    if writer:
+        meta.authors = [a.strip() for a in writer.split(",") if a.strip()]
+    meta.publisher = fields.get("Publisher") or meta.publisher
+    meta.published = fields.get("Year") or meta.published
+    meta.description = fields.get("Summary") or meta.description
+    meta.language = fields.get("LanguageISO") or meta.language
+    if fields.get("Genre"):
+        meta.subjects = [g.strip() for g in fields["Genre"].split(",") if g.strip()]
+
+
+def _image_mime(name: str) -> str:
+    n = name.lower()
+    if n.endswith(".png"):
+        return "image/png"
+    if n.endswith(".webp"):
+        return "image/webp"
+    if n.endswith(".gif"):
+        return "image/gif"
+    return "image/jpeg"
 
 
 def _fb2_cover_id(root, local) -> Optional[str]:

@@ -13,18 +13,20 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
 
 ## Funktionen
 
-- **Lesen**: EPUB, PDF & **FB2** nativ, **MOBI/AZW3/AZW** via Calibre –
-  vorhandene Metadaten + Textprobe der ersten Seiten.
+- **Lesen**: EPUB, PDF, **FB2** & **Comics (CBZ/CBR)** nativ, **MOBI/AZW3/AZW**
+  via Calibre – vorhandene Metadaten + Textprobe der ersten Seiten.
 - **Anreichern** aus mehreren Quellen:
   1. **Online-Datenbanken** – Google Books, Open Library & **DNB** (Deutsche
      Nationalbibliothek, stark bei deutschen Titeln).
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
 - **Beste Treffer zuerst**: Vorschläge werden per Ähnlichkeit (Titel/Autor/ISBN) sortiert.
-- **Spracherkennung**: Sprache aus dem Text bestimmen (setzt `language`).
+- **Vorschläge vergleichen**: Felder aus mehreren Treffern kombinieren (GUI-Dialog).
+- **Spracherkennung**: Sprache aus dem Text bestimmen (setzt `language`, filtert die Suche).
 - **Bibliotheks-Ansicht**: eigener Tab mit Cover-Grid, Suche und Doppelklick-Öffnen.
 - **Einstellungen-Dialog**: SMTP-Zugang & Kindle-Adresse in der GUI hinterlegen.
-- **Cover-Auswahl & -Editor**: bestes Cover per Klick wählen, direkt drehen (↺/↻).
+- **Cover-Auswahl & -Editor**: bestes Cover per Klick wählen, drehen (↺/↻) und interaktiv zuschneiden.
+- **Mehrfachauswahl**: mehrere Bücher gleichzeitig entfernen oder an Kindle senden.
 - **Cover-Optimierung**: Cover für die Kindle-Anzeige skalieren/zuschneiden (Pillow).
 - **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern – mit
   Fortschrittsanzeige und Abbrechen in der GUI (`batch`).
@@ -133,7 +135,7 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | Modul | Aufgabe |
 |-------|---------|
 | `kindle_meta/models.py`   | `BookMetadata` – zentrales Datenmodell + Merge-Logik |
-| `kindle_meta/readers.py`  | EPUB/PDF einlesen (Metadaten + Textprobe) |
+| `kindle_meta/readers.py`  | EPUB/PDF/FB2/CBZ/CBR einlesen (Metadaten + Textprobe) |
 | `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
 | `kindle_meta/providers.py`| Google Books, Open Library & DNB abfragen |
 | `kindle_meta/matching.py` | Vorschläge nach Ähnlichkeit bewerten/sortieren |

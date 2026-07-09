@@ -73,9 +73,9 @@ def write_metadata(
         from . import calibre  # lazy, damit Calibre optional bleibt
 
         calibre.write_metadata(meta, target)
-    elif ext == ".fb2":
+    elif ext in (".fb2", ".cbz", ".cbr"):
         raise WriteError(
-            "FB2 kann gelesen, aber nicht direkt geschrieben werden. Konvertiere "
+            f"'{ext}' kann gelesen, aber nicht direkt geschrieben werden. Konvertiere "
             "es für den Kindle zuerst nach EPUB/AZW3 (z. B. 'kindle-meta convert')."
         )
     else:

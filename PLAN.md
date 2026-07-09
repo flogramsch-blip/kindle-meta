@@ -35,8 +35,10 @@ Ziel: mehr Bücher abdecken, bessere Treffer.
       setzt `language` automatisch beim Anreichern.
 - [x] **Trefferbewertung** (`matching.py`): Vorschläge nach Ähnlichkeit
       (Titel/Autor/ISBN) sortiert, bester zuerst.
-- [ ] Weitere Formate: **CBZ/CBR** (Comics, ComicInfo.xml), optional DjVu.
-- [ ] `langRestrict`/Sprachfilter in der Online-Suche nutzen.
+- [x] Weitere Formate: **CBZ/CBR** (Comics) lesen inkl. ComicInfo.xml + Cover
+      (CBR benötigt optionales `rarfile`).
+- [x] **Sprachfilter** in der Online-Suche (Google Books `langRestrict`).
+- [ ] Optional: DjVu-Format.
 
 ## Meilenstein C — GUI-Komfort (teilweise umgesetzt)
 Ziel: schnelleres, angenehmeres Arbeiten.
@@ -47,10 +49,10 @@ Ziel: schnelleres, angenehmeres Arbeiten.
       (`covers.crop`) vorhanden.
 - [x] **Einstellungen-Dialog** (SMTP, Kindle-Adresse, Absender) – Werte aus
       `config.Settings`, Send-to-Kindle nutzt sie automatisch.
-- [ ] **Vorschläge vergleichen**: mehrere Treffer nebeneinander, Felder einzeln
-      übernehmen (nicht nur „ganzer Vorschlag").
-- [ ] **Interaktiver Cover-Zuschnitt** (Auswahlrechteck) statt nur Funktion.
-- [ ] **Mehrfachauswahl** in der Liste + Sammelaktionen (löschen, senden).
+- [x] **Vorschläge vergleichen** (`CompareDialog`): Felder aus mehreren Treffern
+      frei kombinieren.
+- [x] **Interaktiver Cover-Zuschnitt** (`CropDialog` mit Auswahlrechteck).
+- [x] **Mehrfachauswahl** in der Liste + Sammelaktionen (entfernen, senden).
 
 ## Meilenstein D — Automatisierung & Verteilung ✅ (umgesetzt)
 Ziel: weniger Handarbeit, einfache Installation.
@@ -64,16 +66,16 @@ Ziel: weniger Handarbeit, einfache Installation.
 
 ---
 
-## Empfohlener nächster Schritt
+## Status
 
-Die Meilensteine A und D sind abgeschlossen, die Kerne von B und C ebenfalls.
-Damit steht ein rundes, alltagstaugliches Werkzeug. Sinnvolle Restarbeiten:
+Meilensteine **A, B, C und D** sind umgesetzt. Zusätzlich abgeschlossen:
+Coverage-Messung (`pytest --cov`, in der CI aktiv) und ein Calibre-
+Integrationstest, der sich ohne installiertes Calibre überspringt.
 
-- **C-Feinschliff**: Vorschläge feldweise übernehmen, interaktiver
-  Cover-Zuschnitt (Auswahlrechteck), Mehrfachauswahl in Listen.
-- **B-Erweiterung**: Comic-Formate (CBZ/CBR), Sprachfilter in der Online-Suche.
-- **Qualität**: Testabdeckung messen (coverage), echte Datei-Fixtures für
-  MOBI/AZW3 sobald Calibre in der CI verfügbar ist.
+## Verbleibende Ideen (optional)
 
-Empfehlung: den **C-Feinschliff** zuerst, da er die tägliche Bedienung direkt
-verbessert.
+- **DjVu**-Format lesen.
+- Comic-Metadaten (ComicInfo.xml) auch **schreiben** (aktuell nur lesen).
+- Automatische **Sammlungen** auf dem Kindle über Serien-Metadaten prüfen/optimieren.
+- Übersetzungen der Oberfläche (i18n), aktuell Deutsch.
+- Optionales **Cloud-Backup** der Bibliothek/Einstellungen.

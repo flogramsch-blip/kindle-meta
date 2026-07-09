@@ -20,7 +20,7 @@ import sys
 import traceback
 from dataclasses import replace
 
-from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QPoint, QRect, QRunnable, QSize, Qt, QThreadPool, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRubberBand,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -161,12 +162,23 @@ class MainWindow(QMainWindow):
         # Linke Spalte: Dateiliste
         left = QVBoxLayout()
         self.file_list = QListWidget()
+        self.file_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.file_list.currentItemChanged.connect(self._on_select_file)
         add_btn = QPushButton("Dateien hinzufügen …")
         add_btn.clicked.connect(self._add_files_dialog)
-        left.addWidget(QLabel("Bücher (Drag & Drop möglich)"))
+        left.addWidget(QLabel("Bücher (Drag & Drop, Mehrfachauswahl)"))
         left.addWidget(self.file_list, 1)
         left.addWidget(add_btn)
+
+        # Sammelaktionen für die (mehrfache) Auswahl.
+        sel_row = QHBoxLayout()
+        remove_btn = QPushButton("Ausgewählte entfernen")
+        remove_btn.clicked.connect(self._remove_selected)
+        send_sel_btn = QPushButton("Ausgewählte senden")
+        send_sel_btn.clicked.connect(self._send_selected)
+        sel_row.addWidget(remove_btn)
+        sel_row.addWidget(send_sel_btn)
+        left.addLayout(sel_row)
 
         # Stapelverarbeitung
         left.addWidget(QLabel("Stapelverarbeitung"))
@@ -203,6 +215,9 @@ class MainWindow(QMainWindow):
         self.rotate_right_btn = QPushButton("↻")
         self.rotate_right_btn.setToolTip("90° im Uhrzeigersinn drehen")
         self.rotate_right_btn.clicked.connect(lambda: self._rotate_cover(90))
+        self.crop_btn = QPushButton("Zuschneiden …")
+        self.crop_btn.setToolTip("Cover interaktiv zuschneiden")
+        self.crop_btn.clicked.connect(self._crop_cover)
         rotate_row.addWidget(self.rotate_left_btn)
         rotate_row.addWidget(self.rotate_right_btn)
 
@@ -210,6 +225,7 @@ class MainWindow(QMainWindow):
         cover_box.addWidget(self.cover_label)
         cover_box.addWidget(cover_btn)
         cover_box.addLayout(rotate_row)
+        cover_box.addWidget(self.crop_btn)
 
         form = QFormLayout()
         self.f_title = QLineEdit()
@@ -257,6 +273,10 @@ class MainWindow(QMainWindow):
 
         self.search_btn = QPushButton("Online suchen / anreichern")
         self.search_btn.clicked.connect(self._enrich)
+        self.compare_btn = QPushButton("Vergleichen …")
+        self.compare_btn.setToolTip("Vorschläge feldweise vergleichen und kombinieren")
+        self.compare_btn.clicked.connect(self._compare_suggestions)
+        self.compare_btn.setEnabled(False)
         self.save_btn = QPushButton("Speichern (in Datei schreiben)")
         self.save_btn.clicked.connect(self._save)
         self.save_btn.setEnabled(False)
@@ -265,6 +285,7 @@ class MainWindow(QMainWindow):
         actions.addWidget(QLabel("Vorschläge:"))
         actions.addWidget(self.suggestion_box, 1)
         actions.addWidget(self.search_btn)
+        actions.addWidget(self.compare_btn)
         right.addLayout(actions)
 
         opts_row = QHBoxLayout()
@@ -368,6 +389,7 @@ class MainWindow(QMainWindow):
         self.cover_picker.hide()
         self.suggestion_box.clear()
         self.suggestion_box.setEnabled(False)
+        self.compare_btn.setEnabled(False)
         self._fill_form(meta)
         self._set_form_enabled(True)
         self.save_btn.setEnabled(True)
@@ -473,6 +495,7 @@ class MainWindow(QMainWindow):
             self.suggestion_box.addItem(label)
         self.suggestion_box.setEnabled(bool(result.suggestions))
         self.suggestion_box.blockSignals(False)
+        self.compare_btn.setEnabled(bool(result.suggestions))
 
         # Cover-Auswahl befüllen.
         self._cover_candidates = result.cover_candidates
@@ -513,6 +536,65 @@ class MainWindow(QMainWindow):
         )
         self._show_cover(self._current_meta)
         self.status.setText(f"Cover übernommen: {cand.label}")
+
+    def _compare_suggestions(self) -> None:
+        if self._current_meta is None or not self._suggestions:
+            return
+        dlg = CompareDialog(self._collect_form(), self._suggestions, self)
+        if dlg.exec() == QDialog.Accepted:
+            merged = dlg.result_metadata()
+            self._current_meta = merged
+            self._fill_form(merged)
+            self.status.setText("Felder aus Vergleich übernommen – bitte prüfen und speichern.")
+
+    def _crop_cover(self) -> None:
+        if self._current_meta is None or not self._current_meta.cover:
+            QMessageBox.information(self, "Zuschneiden", "Kein Cover vorhanden.")
+            return
+        dlg = CropDialog(self._current_meta.cover, self)
+        if dlg.exec() == QDialog.Accepted and dlg.result_cover:
+            self._current_meta = replace(
+                self._current_meta, cover=dlg.result_cover, cover_mime=dlg.result_mime
+            )
+            self._show_cover(self._current_meta)
+            self.status.setText("Cover zugeschnitten.")
+
+    # -- Sammelaktionen für die Auswahl ------------------------------------- #
+    def _selected_paths(self) -> list[str]:
+        return [item.data(Qt.UserRole) for item in self.file_list.selectedItems()]
+
+    def _remove_selected(self) -> None:
+        for item in self.file_list.selectedItems():
+            self.file_list.takeItem(self.file_list.row(item))
+
+    def _send_selected(self) -> None:
+        paths = self._selected_paths()
+        if not paths:
+            QMessageBox.information(self, "Senden", "Bitte Bücher in der Liste auswählen.")
+            return
+        default = self._kindle_addr or (_load_settings().get("kindle_addr") or "")
+        addr, ok = QInputDialog.getText(
+            self, "Ausgewählte an Kindle senden",
+            "Kindle-E-Mail-Adresse (…@kindle.com):", text=default,
+        )
+        if not ok or not addr.strip():
+            return
+        self._kindle_addr = addr.strip()
+        _load_settings().set("kindle_addr", self._kindle_addr)
+
+        def _send_all():
+            from ..sendmail import send_to_kindle
+            for p in paths:
+                send_to_kindle(p, self._kindle_addr)
+            return len(paths)
+
+        self.status.setText(f"Sende {len(paths)} Buch/Bücher an Kindle …")
+        worker = Worker(_send_all)
+        worker.signals.result.connect(
+            lambda n: self.status.setText(f"{n} Buch/Bücher an Kindle gesendet.")
+        )
+        worker.signals.error.connect(self._on_error)
+        self.pool.start(worker)
 
     # -- Speichern ---------------------------------------------------------- #
     def _save(self) -> None:
@@ -733,6 +815,179 @@ class MainWindow(QMainWindow):
 def _fmt_index(value: float) -> str:
     """Serien-Index ohne unnötige Nachkommastelle (1 statt 1.0)."""
     return str(int(value)) if float(value).is_integer() else str(value)
+
+
+class CompareDialog(QDialog):
+    """Vergleicht Datei-Werte mit mehreren Vorschlägen – feldweise übernehmbar.
+
+    Für jedes Feld gibt es eine (editierbare) Auswahl aller Kandidatenwerte
+    (Datei + Vorschläge). Beim Bestätigen entsteht ein zusammengesetztes
+    ``BookMetadata`` – man kann so Titel von A und Autor von B kombinieren.
+    """
+
+    # (Attribut, Label). Cover wird separat über die Cover-Auswahl gewählt.
+    FIELDS = [
+        ("title", "Titel"),
+        ("authors", "Autor(en)"),
+        ("publisher", "Verlag"),
+        ("published", "Datum"),
+        ("isbn", "ISBN"),
+        ("language", "Sprache"),
+        ("series", "Serie"),
+        ("series_index", "Serien-Nr."),
+        ("description", "Beschreibung"),
+    ]
+
+    def __init__(self, original: BookMetadata, suggestions: list[BookMetadata], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Vorschläge vergleichen")
+        self.resize(640, 400)
+        self.original = original
+        self._boxes: dict[str, QComboBox] = {}
+
+        form = QFormLayout()
+        sources = [("Datei", original)] + [
+            (s.title or f"Vorschlag {i + 1}", s) for i, s in enumerate(suggestions)
+        ]
+        for attr, label in self.FIELDS:
+            box = QComboBox()
+            box.setEditable(True)
+            seen = set()
+            for _src_label, meta in sources:
+                val = self._field_str(meta, attr)
+                if val and val not in seen:
+                    box.addItem(val)
+                    seen.add(val)
+            # aktuellen Wert der Datei vorwählen
+            current = self._field_str(original, attr)
+            box.setCurrentText(current)
+            self._boxes[attr] = box
+            form.addRow(label, box)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel("Pro Feld einen Wert wählen (oder frei eintippen). "
+                      "Werte lassen sich aus verschiedenen Vorschlägen kombinieren.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #666;")
+        layout.addWidget(hint)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+    @staticmethod
+    def _field_str(meta: BookMetadata, attr: str) -> str:
+        if attr == "authors":
+            return meta.author_str
+        val = getattr(meta, attr)
+        if val is None:
+            return ""
+        if attr == "series_index":
+            return _fmt_index(val)
+        return str(val)
+
+    def result_metadata(self) -> BookMetadata:
+        """Baut aus den ausgewählten Werten ein zusammengesetztes BookMetadata."""
+        def val(attr):
+            return self._boxes[attr].currentText().strip()
+
+        authors = [a.strip() for a in val("authors").split(",") if a.strip()]
+        idx_text = val("series_index").replace(",", ".")
+        try:
+            idx = float(idx_text) if idx_text else None
+        except ValueError:
+            idx = None
+        return replace(
+            self.original,
+            title=val("title") or None,
+            authors=authors,
+            publisher=val("publisher") or None,
+            published=val("published") or None,
+            isbn=val("isbn") or None,
+            language=val("language") or None,
+            series=val("series") or None,
+            series_index=idx,
+            description=val("description") or None,
+        )
+
+
+class _CropLabel(QLabel):
+    """Bild-Label mit aufziehbarem Auswahlrechteck (für den Cover-Zuschnitt)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rubber = QRubberBand(QRubberBand.Rectangle, self)
+        self._origin = QPoint()
+        self.selection = QRect()
+
+    def mousePressEvent(self, event):  # noqa: N802
+        self._origin = event.position().toPoint()
+        self._rubber.setGeometry(QRect(self._origin, QSize()))
+        self._rubber.show()
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        if not self._origin.isNull():
+            self._rubber.setGeometry(QRect(self._origin, event.position().toPoint()).normalized())
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        self.selection = self._rubber.geometry()
+
+
+class CropDialog(QDialog):
+    """Interaktiver Cover-Zuschnitt: Rechteck aufziehen, dann zuschneiden."""
+
+    def __init__(self, cover: bytes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cover zuschneiden")
+        self.cover = cover
+        self.result_cover: bytes | None = None
+        self.result_mime: str | None = None
+
+        self._pix = QPixmap()
+        self._pix.loadFromData(cover)
+        self._display = self._pix.scaled(
+            360, 480, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+
+        self.image = _CropLabel()
+        self.image.setPixmap(self._display)
+        self.image.setFixedSize(self._display.size())
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._crop)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel("Auswahlrechteck aufziehen und mit OK bestätigen.")
+        hint.setStyleSheet("color: #666;")
+        layout.addWidget(hint)
+        layout.addWidget(self.image, alignment=Qt.AlignCenter)
+        layout.addWidget(buttons)
+
+    def _crop(self) -> None:
+        sel = self.image.selection
+        if sel.width() < 5 or sel.height() < 5:
+            self.reject()
+            return
+        # Anzeige-Koordinaten auf Originalbild hochrechnen.
+        sx = self._pix.width() / self._display.width()
+        sy = self._pix.height() / self._display.height()
+        box = (
+            max(0, int(sel.left() * sx)),
+            max(0, int(sel.top() * sy)),
+            min(self._pix.width(), int(sel.right() * sx)),
+            min(self._pix.height(), int(sel.bottom() * sy)),
+        )
+        try:
+            from .. import covers
+
+            self.result_cover, self.result_mime = covers.crop(self.cover, box)
+        except Exception as exc:
+            QMessageBox.warning(self, "Zuschneiden", str(exc))
+            return
+        self.accept()
 
 
 def _load_settings():
