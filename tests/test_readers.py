@@ -1,8 +1,8 @@
 """Tests für das Einlesen von EPUB und PDF."""
 
-from kindle_meta.readers import UnsupportedFormat, read_metadata
-
 import pytest
+
+from kindle_meta.readers import UnsupportedFormat, read_metadata
 
 
 def test_read_epub(sample_epub):

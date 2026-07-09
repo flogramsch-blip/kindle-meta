@@ -18,12 +18,14 @@ def sample_epub(tmp_path):
     book.add_metadata("DC", "publisher", "Testverlag")
     book.add_metadata("DC", "date", "2021")
 
-    # 1x1-PNG als Cover.
-    png = bytes.fromhex(
-        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
-        "890000000d49444154789c6360000002000154a24f0f0000000049454e44ae426082"
-    )
-    book.set_cover("cover.png", png)
+    # Gültiges Cover-PNG via Pillow (kein manuell gehextes, evtl. defektes Bild).
+    import io
+
+    from PIL import Image
+
+    _buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 60, 30)).save(_buf, "PNG")
+    book.set_cover("cover.png", _buf.getvalue())
 
     chapter = epub.EpubHtml(title="Kap 1", file_name="c1.xhtml", lang="de")
     chapter.content = "<html><body><h1>Kapitel</h1><p>Ein Satz Text.</p></body></html>"

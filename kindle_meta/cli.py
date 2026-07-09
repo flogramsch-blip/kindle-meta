@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .enrich import enrich_file
+from .enrich import enrich_batch, enrich_file
 from .models import BookMetadata
 from .readers import read_metadata
 from .writers import write_metadata
@@ -59,8 +59,152 @@ def cmd_apply(args) -> int:
         meta.published = args.date
     if args.isbn:
         meta.isbn = args.isbn
-    out = write_metadata(meta, args.out)
+    if args.series:
+        meta.series = args.series
+    if args.series_index is not None:
+        meta.series_index = args.series_index
+    out = write_metadata(
+        meta, args.out, optimize_cover=args.optimize_cover, backup=not args.no_backup
+    )
     print(f"Geschrieben: {out}")
+    _maybe_record(out, meta)
+    return 0
+
+
+def _maybe_record(path: str, meta: BookMetadata) -> None:
+    """Bearbeitetes Buch in der Bibliothek vermerken (Fehler ignorieren)."""
+    try:
+        from .library import STATUS_WRITTEN, Library
+
+        with Library() as lib:
+            recorded = read_metadata(path)
+            lib.upsert(recorded, status=STATUS_WRITTEN)
+    except Exception:
+        pass
+
+
+def cmd_batch(args) -> int:
+    from .profile import load_protected, parse_protected
+
+    protect = parse_protected(args.protect) if args.protect else load_protected()
+
+    def progress(i, total, path, outcome):
+        mark = "✓" if outcome.ok else "✗"
+        print(f"  [{i + 1}/{total}] {mark} {path.rsplit('/', 1)[-1]}")
+
+    outcomes = enrich_batch(
+        args.paths,
+        apply=args.apply,
+        out_dir=args.out_dir,
+        use_llm=not args.no_llm,
+        optimize_cover=args.optimize_cover,
+        backup=not args.no_backup,
+        protect=protect,
+        progress=progress,
+    )
+    written = 0
+    for oc in outcomes:
+        name = oc.path.rsplit("/", 1)[-1]
+        if not oc.ok:
+            print(f"✗ {name}: {oc.error}")
+            continue
+        best = oc.result.best
+        line = f"• {name}: {best.title or '?'} — {best.author_str or '?'}"
+        if best.published:
+            line += f" ({best.published})"
+        if oc.written_to:
+            line += f"  → geschrieben: {oc.written_to}"
+            written += 1
+            _maybe_record(oc.written_to, oc.result.best)
+        elif args.apply:
+            line += "  (kein Vorschlag – übersprungen)"
+        print(line)
+    if args.apply:
+        print(f"\n{written}/{len(outcomes)} Datei(en) geschrieben.")
+    else:
+        print(f"\nTrockenlauf – mit --apply schreiben. {len(outcomes)} Datei(en) geprüft.")
+    return 0
+
+
+def cmd_convert(args) -> int:
+    from . import calibre
+
+    out = calibre.convert(args.path, args.to)
+    print(f"Konvertiert: {out}")
+    return 0
+
+
+def cmd_send(args) -> int:
+    from .sendmail import send_to_kindle
+
+    send_to_kindle(args.path, args.to)
+    print(f"An Kindle gesendet: {args.to}")
+    return 0
+
+
+def cmd_undo(args) -> int:
+    from .backup import list_backups, restore_latest
+
+    backups = list_backups(args.path)
+    if not backups:
+        print(f"Kein Backup für {args.path.rsplit('/', 1)[-1]} vorhanden.")
+        return 1
+    restore_latest(args.path)
+    print(f"Wiederhergestellt aus: {backups[0]}")
+    return 0
+
+
+def cmd_watch(args) -> int:
+    from .profile import load_protected
+    from .watch import FolderWatcher
+
+    protect = load_protected()
+    watcher = FolderWatcher(args.folder)
+    action = "anreichern & schreiben" if args.apply else "nur anzeigen"
+    print(f"Überwache '{args.folder}' (alle {args.interval}s, {action}). Strg+C beendet.")
+
+    def handle(path: str) -> None:
+        name = path.rsplit("/", 1)[-1]
+        outcomes = enrich_batch(
+            [path], apply=args.apply, out_dir=args.out_dir,
+            use_llm=not args.no_llm, protect=protect,
+        )
+        oc = outcomes[0]
+        if not oc.ok:
+            print(f"✗ {name}: {oc.error}")
+        elif oc.written_to:
+            print(f"✓ {name} → {oc.written_to}")
+        else:
+            best = oc.result.best
+            print(f"• {name}: {best.title or '?'} — {best.author_str or '?'}")
+
+    try:
+        watcher.run(handle, interval=args.interval, process_existing=args.existing)
+    except KeyboardInterrupt:
+        print("\nBeendet.")
+    return 0
+
+
+def cmd_library(args) -> int:
+    from .library import Library
+
+    with Library() as lib:
+        books = lib.all()
+    if not books:
+        print("Bibliothek ist leer.")
+        return 0
+    print(f"{len(books)} Buch/Bücher in der Bibliothek:\n")
+    for meta in books:
+        if meta.series:
+            idx = meta.series_index
+            idx_str = ""
+            if idx is not None:
+                idx_str = f" #{int(idx) if float(idx).is_integer() else idx}"
+            series = f"  [{meta.series}{idx_str}]"
+        else:
+            series = ""
+        print(f"• {meta.title or '?'} — {meta.author_str or '?'}{series}")
+        print(f"    {meta.source_path}")
     return 0
 
 
@@ -85,10 +229,74 @@ def main(argv: list[str] | None = None) -> int:
     p_apply.add_argument("--publisher")
     p_apply.add_argument("--date")
     p_apply.add_argument("--isbn")
+    p_apply.add_argument("--series", help="Serienname (für Kindle-Sammlungen)")
+    p_apply.add_argument("--series-index", type=float, help="Position in der Serie, z. B. 2")
+    p_apply.add_argument(
+        "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
+    p_apply.add_argument(
+        "--no-backup", action="store_true", help="kein Backup vor In-Place-Überschreiben"
+    )
     p_apply.set_defaults(func=cmd_apply)
 
+    p_batch = sub.add_parser("batch", help="Mehrere Dateien anreichern (Trockenlauf oder --apply)")
+    p_batch.add_argument("paths", nargs="+", help="mehrere Dateien")
+    p_batch.add_argument("--apply", action="store_true", help="besten Vorschlag schreiben")
+    p_batch.add_argument("--out-dir", help="Zielordner (sonst Originale überschreiben)")
+    p_batch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
+    p_batch.add_argument(
+        "--optimize-cover", action="store_true", help="Cover für Kindle skalieren/komprimieren"
+    )
+    p_batch.add_argument(
+        "--no-backup", action="store_true", help="kein Backup vor In-Place-Überschreiben"
+    )
+    p_batch.add_argument(
+        "--protect", help="Felder vor Überschreiben schützen, z. B. 'cover,title'"
+    )
+    p_batch.set_defaults(func=cmd_batch)
+
+    p_convert = sub.add_parser("convert", help="Format via Calibre konvertieren (z. B. nach azw3)")
+    p_convert.add_argument("path")
+    p_convert.add_argument(
+        "--to", default="azw3", help="Zielformat: azw3/mobi/epub (Standard: azw3)"
+    )
+    p_convert.set_defaults(func=cmd_convert)
+
+    p_send = sub.add_parser("send", help="Datei per Send-to-Kindle an @kindle.com-Adresse mailen")
+    p_send.add_argument("path")
+    p_send.add_argument("--to", required=True, help="Kindle-Adresse, z. B. name@kindle.com")
+    p_send.set_defaults(func=cmd_send)
+
+    p_undo = sub.add_parser("undo", help="Letztes Backup einer Datei wiederherstellen")
+    p_undo.add_argument("path")
+    p_undo.set_defaults(func=cmd_undo)
+
+    p_library = sub.add_parser("library", help="Bücher in der Bibliothek auflisten")
+    p_library.set_defaults(func=cmd_library)
+
+    p_watch = sub.add_parser("watch", help="Ordner überwachen und neue E-Books anreichern")
+    p_watch.add_argument("folder", help="zu überwachender Ordner")
+    p_watch.add_argument("--apply", action="store_true", help="besten Vorschlag schreiben")
+    p_watch.add_argument("--out-dir", help="Zielordner (sonst Originale überschreiben)")
+    p_watch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
+    p_watch.add_argument("--interval", type=float, default=5.0, help="Scan-Intervall in Sekunden")
+    p_watch.add_argument(
+        "--existing", action="store_true", help="auch bereits vorhandene Dateien verarbeiten"
+    )
+    p_watch.set_defaults(func=cmd_watch)
+
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"Fehler: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # bekannte App-Fehler sauber melden
+        # kindle-meta-eigene Ausnahmen tragen sprechende Meldungen.
+        if exc.__class__.__module__.startswith("kindle_meta"):
+            print(f"Fehler: {exc}", file=sys.stderr)
+            return 1
+        raise
 
 
 if __name__ == "__main__":

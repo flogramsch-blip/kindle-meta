@@ -11,15 +11,74 @@ Ein Kindle zeigt Cover und Metadaten nur zuverlässig an, wenn sie **in der Date
 eingebettet** sind – die Datei umzubenennen reicht nicht. `kindle-meta` schreibt
 die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictionary).
 
+## Schnellstart (für Einsteiger)
+
+Du brauchst **Python 3.10 oder neuer**. Prüfen kannst du das im Terminal
+(macOS/Linux) bzw. in der Eingabeaufforderung/PowerShell (Windows):
+
+```bash
+python3 --version
+```
+
+Fehlt Python, lade es von [python.org](https://www.python.org/downloads/)
+(bei Windows im Installer **„Add Python to PATH"** ankreuzen).
+
+**In 4 Schritten zur laufenden App:**
+
+```bash
+# 1) Projekt herunterladen
+git clone https://github.com/flogramsch-blip/kindle-meta.git
+cd kindle-meta
+
+# 2) App inkl. grafischer Oberfläche installieren
+pip install -e ".[gui]"
+
+# 3) App starten
+kindle-meta-gui
+```
+
+**4) In der App:**
+1. Buch per Knopf oder **Drag & Drop** hinzufügen.
+2. Buch anklicken → vorhandene Angaben erscheinen.
+3. **„Online suchen / anreichern"** → passenden Vorschlag wählen (oder Felder selbst ausfüllen).
+4. **„Speichern"** → fertig, die Datei ist jetzt Kindle-tauglich.
+
+> 💡 Kein Terminal-Fan? Weiter unten unter
+> [Als eigenständige App verpacken](#als-eigenständige-app-verpacken) steht, wie
+> daraus eine Ein-Klick-App ohne Python entsteht.
+
+**Aufs Gerät bringen:** Das fertige Buch (EPUB) per **Send-to-Kindle**
+(App/E-Mail) oder USB auf den Kindle kopieren – Cover und Angaben erscheinen dann
+korrekt. Für ältere Geräte siehe [Auf den Kindle bringen](#auf-den-kindle-bringen).
+
 ## Funktionen
 
-- **Lesen**: EPUB & PDF – vorhandene Metadaten + Textprobe der ersten Seiten.
-- **Anreichern** aus drei Quellen:
-  1. **Online-Datenbanken** – Google Books & Open Library (Cover, Verlag, Datum, ISBN, Seiten).
+- **Lesen**: EPUB, PDF, **FB2** & **Comics (CBZ/CBR)** nativ, **MOBI/AZW3/AZW**
+  via Calibre – vorhandene Metadaten + Textprobe der ersten Seiten.
+- **Anreichern** aus mehreren Quellen:
+  1. **Online-Datenbanken** – Google Books, Open Library & **DNB** (Deutsche
+     Nationalbibliothek, stark bei deutschen Titeln).
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
+- **Beste Treffer zuerst**: Vorschläge werden per Ähnlichkeit (Titel/Autor/ISBN) sortiert.
+- **Vorschläge vergleichen**: Felder aus mehreren Treffern kombinieren (GUI-Dialog).
+- **Spracherkennung**: Sprache aus dem Text bestimmen (setzt `language`, filtert die Suche).
+- **Bibliotheks-Ansicht**: eigener Tab mit Cover-Grid, Suche und Doppelklick-Öffnen.
+- **Einstellungen-Dialog**: SMTP-Zugang & Kindle-Adresse in der GUI hinterlegen.
+- **Cover-Auswahl & -Editor**: bestes Cover per Klick wählen, drehen (↺/↻) und interaktiv zuschneiden.
+- **Mehrfachauswahl**: mehrere Bücher gleichzeitig entfernen oder an Kindle senden.
+- **Cover-Optimierung**: Cover für die Kindle-Anzeige skalieren/zuschneiden (Pillow).
+- **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern – mit
+  Fortschrittsanzeige und Abbrechen in der GUI (`batch`).
 - **Schreiben**: Metadaten + Cover eingebettet zurück in die Datei.
-- **Optional**: Konvertierung nach AZW3/MOBI via Calibre (für ältere Kindles).
+- **Send-to-Kindle**: fertige Bücher direkt an die `@kindle.com`-Adresse mailen.
+- **Serien-Metadaten**: `series`/`series_index` für Kindle-Sammlungen (EPUB & Calibre).
+- **Backup & Undo**: automatische Sicherung vor dem Überschreiben, Wiederherstellung per `undo`.
+- **Bibliothek (SQLite)**: bearbeitete Bücher + Status bleiben über Sitzungen erhalten.
+- **ISBN-Erkennung**: gültige ISBN aus dem Text (Impressum) automatisch ziehen.
+- **Anreicherungs-Profile**: einzelne Felder (z. B. Cover) vor Überschreiben schützen.
+- **Watch-Ordner**: neue Downloads in einem Ordner automatisch anreichern (`watch`).
+- **Konvertierung** nach AZW3/MOBI via Calibre (für ältere Kindles).
 
 ## Installation
 
@@ -43,10 +102,17 @@ installieren (liefert `ebook-convert`). Für die GUI wird `PySide6` benötigt.
 kindle-meta-gui
 ```
 
+Tab **„Bearbeiten"**:
 1. Bücher per Button oder **Drag & Drop** hinzufügen.
-2. Buch auswählen → vorhandene Metadaten + Cover erscheinen.
+2. Buch auswählen → vorhandene Metadaten + Cover erscheinen (Cover drehbar mit ↺/↻).
 3. **„Online suchen / anreichern"** → Vorschläge wählen (oder Felder manuell füllen).
-4. **„Speichern"** → Metadaten werden in die Datei geschrieben.
+4. **„Speichern"** → Metadaten werden in die Datei geschrieben (Backup optional).
+
+Tab **„Bibliothek"**: Cover-Grid aller bearbeiteten Bücher mit Suchfeld;
+Doppelklick öffnet ein Buch wieder im Editor.
+
+Unter **Datei → Einstellungen** lassen sich Kindle-Adresse und SMTP-Zugang
+hinterlegen (statt Umgebungsvariablen).
 
 ### Kommandozeile
 
@@ -58,6 +124,40 @@ kindle-meta apply   buch.epub \
     --author "Hermann Hesse" \
     --publisher "Suhrkamp" --date 1927 \
     --out fertig.epub                       # schreiben (Original bleibt erhalten)
+
+# Stapelverarbeitung: erst Trockenlauf, dann schreiben
+kindle-meta batch *.epub                    # nur Vorschläge anzeigen
+kindle-meta batch *.epub --apply --out-dir fertig/ --optimize-cover
+
+# Cover optimieren + Serie setzen (Backup automatisch beim In-Place-Schreiben)
+kindle-meta apply buch.epub --optimize-cover --series "Die Chroniken" --series-index 2
+kindle-meta undo    buch.epub               # letztes Backup wiederherstellen
+kindle-meta library                         # bearbeitete Bücher auflisten
+
+# Felder schützen (Cover/Titel bleiben erhalten) und Ordner überwachen
+kindle-meta batch *.epub --apply --protect "cover,title"
+kindle-meta watch ~/Downloads --apply --out-dir ~/Kindle/
+
+# Kindle-Eigenformate (erfordert Calibre)
+kindle-meta info    buch.azw3
+kindle-meta convert fertig.epub --to azw3   # für ältere Kindles
+
+# Per Send-to-Kindle verschicken (SMTP-Config als Umgebungsvariablen, s. u.)
+kindle-meta send fertig.epub --to deingeraet@kindle.com
+```
+
+### Send-to-Kindle einrichten
+
+Amazon vergibt pro Gerät eine `@kindle.com`-Adresse. Die **Absenderadresse muss
+in den Amazon-Kontoeinstellungen als „genehmigte E-Mail" hinterlegt** sein. Die
+SMTP-Zugangsdaten kommen aus Umgebungsvariablen (keine Geheimnisse im Code):
+
+```bash
+export KINDLE_SMTP_HOST=smtp.gmail.com
+export KINDLE_SMTP_PORT=587          # 587 = STARTTLS, 465 = SSL
+export KINDLE_SMTP_USER=ich@gmail.com
+export KINDLE_SMTP_PASS=app-passwort # bei Gmail: App-Passwort
+export KINDLE_FROM=ich@gmail.com     # optional, Standard = KINDLE_SMTP_USER
 ```
 
 ## Auf den Kindle bringen
@@ -75,28 +175,52 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | Modul | Aufgabe |
 |-------|---------|
 | `kindle_meta/models.py`   | `BookMetadata` – zentrales Datenmodell + Merge-Logik |
-| `kindle_meta/readers.py`  | EPUB/PDF einlesen (Metadaten + Textprobe) |
-| `kindle_meta/providers.py`| Google Books & Open Library abfragen |
+| `kindle_meta/readers.py`  | EPUB/PDF/FB2/CBZ/CBR einlesen (Metadaten + Textprobe) |
+| `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
+| `kindle_meta/providers.py`| Google Books, Open Library & DNB abfragen |
+| `kindle_meta/matching.py` | Vorschläge nach Ähnlichkeit bewerten/sortieren |
+| `kindle_meta/lang.py`     | Spracherkennung über Stoppwörter (ohne Abhängigkeit) |
 | `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
-| `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge |
-| `kindle_meta/writers.py`  | Metadaten + Cover zurückschreiben, Calibre-Konvertierung |
-| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche |
-| `kindle_meta/cli.py`      | Kommandozeile |
+| `kindle_meta/covers.py`   | Cover für die Kindle-Anzeige optimieren (Pillow) |
+| `kindle_meta/sendmail.py` | Send-to-Kindle per SMTP-E-Mail |
+| `kindle_meta/isbn.py`     | ISBN aus Text erkennen & validieren |
+| `kindle_meta/backup.py`   | Sicherungskopien anlegen/wiederherstellen |
+| `kindle_meta/library.py`  | SQLite-Bibliothek: bearbeitete Bücher + Status |
+| `kindle_meta/config.py`   | App-Verzeichnis & Einstellungen (keyring optional) |
+| `kindle_meta/profile.py`  | Anreicherungs-Profile: geschützte Felder |
+| `kindle_meta/watch.py`    | Ordner-Überwachung (Polling) |
+| `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
+| `kindle_meta/writers.py`  | Metadaten + Cover + Serie zurückschreiben |
+| `kindle_meta/gui/app.py`  | PySide6-GUI: Editor- & Bibliotheks-Tab, Cover-Editor, Einstellungen |
+| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send/undo/library/watch) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.
 
-## Tests
+## Als eigenständige App verpacken
+
+Mit PyInstaller entsteht eine Ein-Datei-App, die kein installiertes Python braucht:
 
 ```bash
-pip install -e ".[dev]"
-pytest
+pip install -e ".[gui,build]"
+pyinstaller packaging/kindle-meta.spec
+# Ergebnis: dist/kindle-meta
 ```
+
+## Tests & Lint
+
+```bash
+pip install -e ".[dev,gui]"
+ruff check kindle_meta tests
+QT_QPA_PLATFORM=offscreen pytest
+```
+
+Bei jedem Push/Pull-Request läuft die [GitHub-Actions-CI](.github/workflows/ci.yml)
+(Lint + Tests auf Python 3.10–3.12). GUI-Tests laufen headless (Qt „offscreen")
+und überspringen sich, falls PySide6 fehlt.
 
 ## Roadmap
 
-- Weitere Formate: MOBI/AZW3 direkt lesen/schreiben (via Calibre-Anbindung).
-- Stapelverarbeitung mehrerer Bücher in einem Durchgang.
-- Cover-Auswahl aus mehreren Treffern.
+Siehe [PLAN.md](PLAN.md) für die geplanten nächsten Ausbaustufen.
 
 ## Lizenz
 
