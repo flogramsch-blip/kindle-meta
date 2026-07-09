@@ -15,6 +15,7 @@ damit die Oberfläche nicht einfriert. Netzwerk-lastige Anreicherung wird über
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
 from dataclasses import replace
@@ -25,6 +26,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -37,6 +40,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -134,6 +138,21 @@ class MainWindow(QMainWindow):
 
     # -- UI-Aufbau ---------------------------------------------------------- #
     def _build_ui(self) -> None:
+        self._build_menu()
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_editor_tab(), "Bearbeiten")
+        self.tabs.addTab(self._build_library_tab(), "Bibliothek")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.setCentralWidget(self.tabs)
+
+    def _build_menu(self) -> None:
+        menu = self.menuBar().addMenu("&Datei")
+        act_settings = menu.addAction("Einstellungen …")
+        act_settings.triggered.connect(self._open_settings)
+        act_quit = menu.addAction("Beenden")
+        act_quit.triggered.connect(self.close)
+
+    def _build_editor_tab(self) -> QWidget:
         central = QWidget()
         root = QHBoxLayout(central)
 
@@ -174,9 +193,21 @@ class MainWindow(QMainWindow):
         cover_btn = QPushButton("Cover ersetzen …")
         cover_btn.clicked.connect(self._replace_cover)
 
+        # Inline-Cover-Editor: drehen.
+        rotate_row = QHBoxLayout()
+        self.rotate_left_btn = QPushButton("↺")
+        self.rotate_left_btn.setToolTip("90° gegen den Uhrzeigersinn drehen")
+        self.rotate_left_btn.clicked.connect(lambda: self._rotate_cover(-90))
+        self.rotate_right_btn = QPushButton("↻")
+        self.rotate_right_btn.setToolTip("90° im Uhrzeigersinn drehen")
+        self.rotate_right_btn.clicked.connect(lambda: self._rotate_cover(90))
+        rotate_row.addWidget(self.rotate_left_btn)
+        rotate_row.addWidget(self.rotate_right_btn)
+
         cover_box = QVBoxLayout()
         cover_box.addWidget(self.cover_label)
         cover_box.addWidget(cover_btn)
+        cover_box.addLayout(rotate_row)
 
         form = QFormLayout()
         self.f_title = QLineEdit()
@@ -256,8 +287,39 @@ class MainWindow(QMainWindow):
         right.addWidget(self.status)
 
         root.addLayout(right, 2)
-        self.setCentralWidget(central)
         self._set_form_enabled(False)
+        return central
+
+    def _build_library_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        top = QHBoxLayout()
+        self.lib_search = QLineEdit()
+        self.lib_search.setPlaceholderText("Suchen (Titel/Autor/Serie) …")
+        self.lib_search.textChanged.connect(self._filter_library)
+        refresh_btn = QPushButton("Aktualisieren")
+        refresh_btn.clicked.connect(self._refresh_library)
+        top.addWidget(QLabel("Bibliothek:"))
+        top.addWidget(self.lib_search, 1)
+        top.addWidget(refresh_btn)
+        layout.addLayout(top)
+
+        self.lib_grid = QListWidget()
+        self.lib_grid.setViewMode(QListWidget.IconMode)
+        self.lib_grid.setIconSize(QSize(120, 170))
+        self.lib_grid.setGridSize(QSize(160, 230))
+        self.lib_grid.setResizeMode(QListWidget.Adjust)
+        self.lib_grid.setMovement(QListWidget.Static)
+        self.lib_grid.setSpacing(10)
+        self.lib_grid.setWordWrap(True)
+        self.lib_grid.itemDoubleClicked.connect(self._open_library_item)
+        layout.addWidget(self.lib_grid, 1)
+
+        self.lib_status = QLabel("")
+        self.lib_status.setStyleSheet("color: #555;")
+        layout.addWidget(self.lib_status)
+        return widget
 
     # -- Datei-Handling ----------------------------------------------------- #
     def _add_files_dialog(self) -> None:
@@ -369,6 +431,20 @@ class MainWindow(QMainWindow):
         self._current_meta = replace(self._current_meta, cover=data, cover_mime=mime)
         self._show_cover(self._current_meta)
 
+    def _rotate_cover(self, degrees: int) -> None:
+        if self._current_meta is None or not self._current_meta.cover:
+            return
+        try:
+            from .. import covers
+
+            data, mime = covers.rotate(self._current_meta.cover, degrees)
+        except Exception as exc:
+            QMessageBox.warning(self, "Cover drehen", str(exc))
+            return
+        self._current_meta = replace(self._current_meta, cover=data, cover_mime=mime)
+        self._show_cover(self._current_meta)
+        self.status.setText("Cover gedreht.")
+
     # -- Anreicherung ------------------------------------------------------- #
     def _enrich(self) -> None:
         if self._current_meta is None:
@@ -454,6 +530,7 @@ class MainWindow(QMainWindow):
     def _on_saved(self, out_path: str) -> None:
         self.save_btn.setEnabled(True)
         self.status.setText(f"Gespeichert: {out_path}")
+        _record_library(out_path)
         QMessageBox.information(self, "Fertig", f"Metadaten geschrieben:\n{out_path}")
 
     # -- Stapelverarbeitung ------------------------------------------------- #
@@ -511,6 +588,9 @@ class MainWindow(QMainWindow):
         self.batch_btn.setEnabled(True)
         self._batch_worker = None
         written = sum(1 for o in outcomes if o.written_to)
+        for o in outcomes:
+            if o.written_to:
+                _record_library(o.written_to)
         errors = [o for o in outcomes if not o.ok]
         msg = f"{written} von {len(outcomes)} Datei(en) geschrieben."
         if errors:
@@ -524,13 +604,15 @@ class MainWindow(QMainWindow):
     def _send_to_kindle(self) -> None:
         if self._current_meta is None or not self._current_meta.source_path:
             return
+        default = self._kindle_addr or (_load_settings().get("kindle_addr") or "")
         addr, ok = QInputDialog.getText(
             self, "An Kindle senden",
-            "Kindle-E-Mail-Adresse (…@kindle.com):", text=self._kindle_addr,
+            "Kindle-E-Mail-Adresse (…@kindle.com):", text=default,
         )
         if not ok or not addr.strip():
             return
         self._kindle_addr = addr.strip()
+        _load_settings().set("kindle_addr", self._kindle_addr)
 
         def _send():
             from ..sendmail import send_to_kindle
@@ -548,6 +630,75 @@ class MainWindow(QMainWindow):
         self.send_btn.setEnabled(True)
         self.status.setText(f"An Kindle gesendet: {addr}")
         QMessageBox.information(self, "Gesendet", f"Buch an {addr} gesendet.")
+
+    # -- Bibliotheks-Tab ---------------------------------------------------- #
+    def _on_tab_changed(self, index: int) -> None:
+        if self.tabs.tabText(index) == "Bibliothek":
+            self._refresh_library()
+
+    def _refresh_library(self) -> None:
+        try:
+            from ..library import Library
+
+            with Library() as lib:
+                self._lib_books = lib.all()
+                self._lib_thumbs = {
+                    m.source_path: lib.get_thumbnail(m.source_path) for m in self._lib_books
+                }
+        except Exception as exc:
+            self.lib_status.setText(f"Bibliothek nicht ladbar: {exc}")
+            return
+        self._render_library(self._lib_books)
+        self.lib_status.setText(f"{len(self._lib_books)} Buch/Bücher.")
+
+    def _render_library(self, books) -> None:
+        self.lib_grid.clear()
+        for meta in books:
+            label = meta.title or "?"
+            if meta.authors:
+                label += f"\n{meta.author_str}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, meta.source_path)
+            item.setToolTip(meta.source_path or "")
+            thumb = getattr(self, "_lib_thumbs", {}).get(meta.source_path)
+            if thumb:
+                pix = QPixmap()
+                if pix.loadFromData(thumb):
+                    item.setIcon(QIcon(pix))
+            self.lib_grid.addItem(item)
+
+    def _filter_library(self, text: str) -> None:
+        text = text.strip().lower()
+        books = getattr(self, "_lib_books", [])
+        if not text:
+            self._render_library(books)
+            return
+        filtered = [
+            m for m in books
+            if text in (m.title or "").lower()
+            or text in m.author_str.lower()
+            or text in (m.series or "").lower()
+        ]
+        self._render_library(filtered)
+
+    def _open_library_item(self, item: QListWidgetItem) -> None:
+        path = item.data(Qt.UserRole)
+        if not path or not os.path.exists(path):
+            QMessageBox.warning(self, "Bibliothek", "Datei nicht gefunden:\n" + str(path))
+            return
+        self._add_file(path)
+        self.tabs.setCurrentIndex(0)  # zum Bearbeiten-Tab
+        # In der Liste auswählen -> lädt Metadaten.
+        for i in range(self.file_list.count()):
+            if self.file_list.item(i).data(Qt.UserRole) == path:
+                self.file_list.setCurrentRow(i)
+                break
+
+    # -- Einstellungen ------------------------------------------------------ #
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(self)
+        if dlg.exec() == QDialog.Accepted:
+            self.status.setText("Einstellungen gespeichert.")
 
     # -- Hilfen ------------------------------------------------------------- #
     def _on_error(self, tb: str) -> None:
@@ -575,6 +726,76 @@ class MainWindow(QMainWindow):
 def _fmt_index(value: float) -> str:
     """Serien-Index ohne unnötige Nachkommastelle (1 statt 1.0)."""
     return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def _load_settings():
+    from ..config import Settings
+
+    return Settings()
+
+
+def _record_library(path: str) -> None:
+    """Geschriebenes Buch in der Bibliothek vermerken (Fehler ignorieren)."""
+    try:
+        from ..library import STATUS_WRITTEN, Library
+        from ..readers import read_metadata
+
+        meta = read_metadata(path)
+        with Library() as lib:
+            lib.upsert(meta, status=STATUS_WRITTEN)
+    except Exception:
+        pass
+
+
+class SettingsDialog(QDialog):
+    """Dialog zum Bearbeiten von Kindle-Adresse und SMTP-Zugang."""
+
+    # (Einstellungs-Schlüssel, Anzeigelabel, Passwort?)
+    FIELDS = [
+        ("kindle_addr", "Kindle-Adresse (…@kindle.com)", False),
+        ("smtp_host", "SMTP-Host", False),
+        ("smtp_port", "SMTP-Port (587/465)", False),
+        ("smtp_user", "SMTP-Benutzer", False),
+        ("smtp_pass", "SMTP-Passwort", True),
+        ("smtp_from", "Absender (optional)", False),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Einstellungen")
+        self.settings = _load_settings()
+
+        form = QFormLayout()
+        self.inputs: dict[str, QLineEdit] = {}
+        for key, label, is_secret in self.FIELDS:
+            edit = QLineEdit(self.settings.get(key, "") or "")
+            if is_secret:
+                edit.setEchoMode(QLineEdit.Password)
+            self.inputs[key] = edit
+            form.addRow(label, edit)
+
+        note = QLabel(
+            "Geheimnisse werden im System-Schlüsselbund gespeichert, falls "
+            "'keyring' installiert ist – sonst in der Konfigdatei.\n"
+            "Die Absenderadresse muss bei Amazon als genehmigt hinterlegt sein."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666;")
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(note)
+        layout.addWidget(buttons)
+
+    def _save(self) -> None:
+        for key, _label, _secret in self.FIELDS:
+            value = self.inputs[key].text().strip()
+            self.settings.set(key, value or None)
+        self.accept()
 
 
 def main() -> int:

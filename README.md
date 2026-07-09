@@ -19,7 +19,9 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
   1. **Online-Datenbanken** – Google Books & Open Library (Cover, Verlag, Datum, ISBN, Seiten).
   2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
   3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
-- **Cover-Auswahl**: Aus mehreren Treffern das beste Cover per Klick wählen.
+- **Bibliotheks-Ansicht**: eigener Tab mit Cover-Grid, Suche und Doppelklick-Öffnen.
+- **Einstellungen-Dialog**: SMTP-Zugang & Kindle-Adresse in der GUI hinterlegen.
+- **Cover-Auswahl & -Editor**: bestes Cover per Klick wählen, direkt drehen (↺/↻).
 - **Cover-Optimierung**: Cover für die Kindle-Anzeige skalieren/zuschneiden (Pillow).
 - **Stapelverarbeitung**: Ganze Ordner in einem Durchgang anreichern – mit
   Fortschrittsanzeige und Abbrechen in der GUI (`batch`).
@@ -53,10 +55,17 @@ installieren (liefert `ebook-convert`). Für die GUI wird `PySide6` benötigt.
 kindle-meta-gui
 ```
 
+Tab **„Bearbeiten"**:
 1. Bücher per Button oder **Drag & Drop** hinzufügen.
-2. Buch auswählen → vorhandene Metadaten + Cover erscheinen.
+2. Buch auswählen → vorhandene Metadaten + Cover erscheinen (Cover drehbar mit ↺/↻).
 3. **„Online suchen / anreichern"** → Vorschläge wählen (oder Felder manuell füllen).
-4. **„Speichern"** → Metadaten werden in die Datei geschrieben.
+4. **„Speichern"** → Metadaten werden in die Datei geschrieben (Backup optional).
+
+Tab **„Bibliothek"**: Cover-Grid aller bearbeiteten Bücher mit Suchfeld;
+Doppelklick öffnet ein Buch wieder im Editor.
+
+Unter **Datei → Einstellungen** lassen sich Kindle-Adresse und SMTP-Zugang
+hinterlegen (statt Umgebungsvariablen).
 
 ### Kommandozeile
 
@@ -127,7 +136,7 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/config.py`   | App-Verzeichnis & Einstellungen (keyring optional) |
 | `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
 | `kindle_meta/writers.py`  | Metadaten + Cover + Serie zurückschreiben |
-| `kindle_meta/gui/app.py`  | PySide6-Desktop-Oberfläche (Cover-Auswahl, Stapel, Send) |
+| `kindle_meta/gui/app.py`  | PySide6-GUI: Editor- & Bibliotheks-Tab, Cover-Editor, Einstellungen |
 | `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send/undo/library) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.

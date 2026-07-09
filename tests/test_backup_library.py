@@ -55,6 +55,43 @@ def test_library_upsert_and_get(tmp_path):
         assert lib.get(meta.source_path).title == "Buch A neu"
 
 
+def _png(width=400, height=600) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (20, 40, 60)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_library_stores_thumbnail(tmp_path):
+    meta = BookMetadata(
+        title="Mit Cover", source_path=str(tmp_path / "c.epub"),
+        cover=_png(), cover_mime="image/png",
+    )
+    with Library() as lib:
+        lib.upsert(meta)
+        thumb = lib.get_thumbnail(meta.source_path)
+        assert thumb and thumb[:2] == b"\xff\xd8"  # JPEG-Signatur
+
+
+def test_library_migration_adds_thumbnail_column(tmp_path):
+    """Alte DB ohne thumbnail-Spalte wird beim Öffnen migriert."""
+    import sqlite3
+
+    db = str(tmp_path / "old.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE books (path TEXT PRIMARY KEY, title TEXT)")
+    con.execute("INSERT INTO books (path, title) VALUES ('p', 't')")
+    con.commit()
+    con.close()
+
+    with Library(db) as lib:  # sollte migrieren, nicht crashen
+        cols = {r[1] for r in lib.conn.execute("PRAGMA table_info(books)")}
+        assert "thumbnail" in cols
+
+
 def test_settings_roundtrip():
     s = Settings()
     s.set("kindle_addr", "dev@kindle.com")

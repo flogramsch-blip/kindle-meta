@@ -62,6 +62,38 @@ class SmtpConfig:
             from_addr=os.environ.get("KINDLE_FROM", user),
         )
 
+    @classmethod
+    def load(cls, settings=None) -> "SmtpConfig":
+        """SMTP-Konfiguration aus Umgebungsvariablen, sonst aus den Einstellungen.
+
+        Umgebungsvariablen haben Vorrang; fehlende Werte werden aus
+        ``config.Settings`` ergänzt (z. B. aus dem GUI-Einstellungen-Dialog).
+        """
+        if settings is None:
+            from .config import Settings
+
+            settings = Settings()
+
+        def pick(env_key: str, set_key: str) -> Optional[str]:
+            return os.environ.get(env_key) or settings.get(set_key)
+
+        host = pick("KINDLE_SMTP_HOST", "smtp_host")
+        user = pick("KINDLE_SMTP_USER", "smtp_user")
+        password = pick("KINDLE_SMTP_PASS", "smtp_pass")
+        if not (host and user and password):
+            raise SendError(
+                "SMTP nicht konfiguriert. Bitte im Einstellungen-Dialog hinterlegen "
+                "oder KINDLE_SMTP_* als Umgebungsvariablen setzen."
+            )
+        port = pick("KINDLE_SMTP_PORT", "smtp_port") or "587"
+        return cls(
+            host=host,
+            port=int(port),
+            user=user,
+            password=password,
+            from_addr=pick("KINDLE_FROM", "smtp_from") or user,
+        )
+
 
 def build_message(file_path: str, to_addr: str, from_addr: str) -> EmailMessage:
     """Baut die E-Mail mit dem Buch als Anhang (ohne zu versenden – testbar)."""
@@ -96,7 +128,7 @@ def send_to_kindle(
     file_path: str, to_addr: str, config: Optional[SmtpConfig] = None
 ) -> None:
     """Versendet die Datei an die Kindle-Adresse ``to_addr`` via SMTP."""
-    config = config or SmtpConfig.from_env()
+    config = config or SmtpConfig.load()
     msg = build_message(file_path, to_addr, config.from_addr)
 
     try:

@@ -36,15 +36,18 @@ Ziel: mehr Bücher abdecken, bessere Treffer.
 - [ ] **Trefferbewertung**: Vorschläge nach Ähnlichkeit zu Datei-Metadaten
       sortieren (Titel/Autor-Fuzzy-Score) statt nur Provider-Reihenfolge.
 
-## Meilenstein C — GUI-Komfort
+## Meilenstein C — GUI-Komfort (teilweise umgesetzt)
 Ziel: schnelleres, angenehmeres Arbeiten.
 
-- [ ] **Bibliotheks-Ansicht** als Cover-Grid mit Filter/Suche statt reiner Liste.
+- [x] **Bibliotheks-Ansicht** als Cover-Grid mit Such-/Filterfeld (eigener Tab,
+      Thumbnails aus der SQLite-Bibliothek, Doppelklick öffnet im Editor).
+- [x] **Inline-Cover-Editor**: Drehen (↺/↻) direkt im Editor; Zuschnitt-Helfer
+      (`covers.crop`) vorhanden.
+- [x] **Einstellungen-Dialog** (SMTP, Kindle-Adresse, Absender) – Werte aus
+      `config.Settings`, Send-to-Kindle nutzt sie automatisch.
 - [ ] **Vorschläge vergleichen**: mehrere Treffer nebeneinander, Felder einzeln
       übernehmen (nicht nur „ganzer Vorschlag").
-- [ ] **Inline-Cover-Editor**: zuschneiden/drehen vor dem Einbetten.
-- [ ] **Einstellungen-Dialog** (SMTP, Kindle-Adresse, Standard-Zielordner,
-      Anreicherungs-Optionen) – ersetzt manuelle Umgebungsvariablen.
+- [ ] **Interaktiver Cover-Zuschnitt** (Auswahlrechteck) statt nur Funktion.
 - [ ] **Mehrfachauswahl** in der Liste + Sammelaktionen (löschen, senden).
 
 ## Meilenstein D — Automatisierung & Verteilung
@@ -61,8 +64,9 @@ Ziel: weniger Handarbeit, einfache Installation.
 
 ## Empfohlener nächster Schritt
 
-Meilenstein A ist abgeschlossen. Als Nächstes bietet sich **Meilenstein C**
-an – konkret die **Bibliotheks-Ansicht als Cover-Grid** und der
-**Einstellungen-Dialog** (SMTP/Kindle-Adresse), da die Datenbasis (SQLite +
-`config.Settings`) dafür bereits steht. Alternativ **Meilenstein B**
-(Spracherkennung + Trefferbewertung) für spürbar bessere Anreicherungs-Treffer.
+Meilenstein A ist abgeschlossen, der Kern von Meilenstein C (Bibliotheks-Grid,
+Einstellungen-Dialog, Cover-Drehen) ebenfalls. Als Nächstes bietet sich
+**Meilenstein B** an – **Spracherkennung** (`langdetect`) und
+**Fuzzy-Trefferbewertung**, um die Online-Anreicherung spürbar treffsicherer zu
+machen. Danach die restlichen C-Punkte (Vorschläge feldweise übernehmen,
+interaktiver Cover-Zuschnitt, Mehrfachauswahl).

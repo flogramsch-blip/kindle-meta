@@ -43,6 +43,40 @@ def test_smtp_config_missing_raises(monkeypatch):
         SmtpConfig.from_env()
 
 
+def test_smtp_config_load_from_settings(tmp_path, monkeypatch):
+    """Ohne Umgebungsvariablen kommt die Config aus den Einstellungen."""
+    monkeypatch.setenv("KINDLE_META_HOME", str(tmp_path / "home"))
+    for var in ("KINDLE_SMTP_HOST", "KINDLE_SMTP_USER", "KINDLE_SMTP_PASS",
+                "KINDLE_SMTP_PORT", "KINDLE_FROM"):
+        monkeypatch.delenv(var, raising=False)
+
+    from kindle_meta.config import Settings
+
+    s = Settings()
+    s.set("smtp_host", "smtp.set.com")
+    s.set("smtp_user", "u@set.com")
+    s.set("smtp_pass", "pw")
+
+    cfg = SmtpConfig.load(Settings())
+    assert cfg.host == "smtp.set.com"
+    assert cfg.from_addr == "u@set.com"
+
+
+def test_smtp_config_env_overrides_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("KINDLE_META_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("KINDLE_SMTP_HOST", "env-host")
+    monkeypatch.setenv("KINDLE_SMTP_USER", "env-user")
+    monkeypatch.setenv("KINDLE_SMTP_PASS", "env-pass")
+
+    from kindle_meta.config import Settings
+
+    s = Settings()
+    s.set("smtp_host", "settings-host")
+
+    cfg = SmtpConfig.load(Settings())
+    assert cfg.host == "env-host"  # Umgebung hat Vorrang
+
+
 def test_send_to_kindle_uses_smtp(monkeypatch, sample_epub):
     """send_to_kindle baut Nachricht und ruft SMTP korrekt auf (SMTP gemockt)."""
     sent = {}

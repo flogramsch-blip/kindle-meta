@@ -20,7 +20,7 @@ dependencies = [
 gui = ["PySide6>=6.5"]
 llm = ["anthropic>=0.40"]
 keyring = ["keyring>=24"]  # sichere Ablage von SMTP-Zugangsdaten
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "PySide6>=6.5"]  # PySide6 für die GUI-Smoke-Tests
 
 [project.scripts]
 kindle-meta = "kindle_meta.cli:main"

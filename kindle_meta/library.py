@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS books (
     series_index REAL,
     page_count   INTEGER,
     has_cover    INTEGER DEFAULT 0,
+    thumbnail    BLOB,
     status       TEXT,
     updated_at   TEXT
 );
@@ -51,7 +52,14 @@ class Library:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Fügt fehlende Spalten in bestehenden Datenbanken nachträglich hinzu."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(books)")}
+        if "thumbnail" not in cols:
+            self.conn.execute("ALTER TABLE books ADD COLUMN thumbnail BLOB")
 
     def __enter__(self) -> "Library":
         return self
@@ -64,9 +72,14 @@ class Library:
 
     # -- Schreiben ---------------------------------------------------------- #
     def upsert(self, meta: BookMetadata, status: Optional[str] = None) -> None:
-        """Fügt ein Buch ein oder aktualisiert es (Schlüssel: source_path)."""
+        """Fügt ein Buch ein oder aktualisiert es (Schlüssel: source_path).
+
+        Ist ein Cover vorhanden, wird daraus ein kleines Vorschaubild für die
+        Bibliotheks-Ansicht abgeleitet (falls Pillow verfügbar ist).
+        """
         if not meta.source_path:
             raise ValueError("meta.source_path muss gesetzt sein")
+        thumb = _make_thumbnail(meta.cover)
         row = {
             "path": meta.source_path,
             "title": meta.title,
@@ -79,6 +92,7 @@ class Library:
             "series_index": meta.series_index,
             "page_count": meta.page_count,
             "has_cover": 1 if meta.has_cover() else 0,
+            "thumbnail": thumb,
             "status": status or STATUS_IMPORTED,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
@@ -86,16 +100,17 @@ class Library:
             """
             INSERT INTO books (path, title, authors, publisher, published, isbn,
                                language, series, series_index, page_count,
-                               has_cover, status, updated_at)
+                               has_cover, thumbnail, status, updated_at)
             VALUES (:path, :title, :authors, :publisher, :published, :isbn,
                     :language, :series, :series_index, :page_count,
-                    :has_cover, :status, :updated_at)
+                    :has_cover, :thumbnail, :status, :updated_at)
             ON CONFLICT(path) DO UPDATE SET
                 title=excluded.title, authors=excluded.authors,
                 publisher=excluded.publisher, published=excluded.published,
                 isbn=excluded.isbn, language=excluded.language,
                 series=excluded.series, series_index=excluded.series_index,
                 page_count=excluded.page_count, has_cover=excluded.has_cover,
+                thumbnail=COALESCE(excluded.thumbnail, books.thumbnail),
                 status=excluded.status, updated_at=excluded.updated_at
             """,
             row,
@@ -130,6 +145,24 @@ class Library:
 
     def count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+
+    def get_thumbnail(self, path: str) -> Optional[bytes]:
+        cur = self.conn.execute("SELECT thumbnail FROM books WHERE path=?", (path,))
+        row = cur.fetchone()
+        return row["thumbnail"] if row and row["thumbnail"] else None
+
+
+def _make_thumbnail(cover: Optional[bytes]) -> Optional[bytes]:
+    """Kleines JPEG-Vorschaubild aus Cover-Daten – ohne Pillow einfach ``None``."""
+    if not cover:
+        return None
+    try:
+        from . import covers
+
+        thumb, _ = covers.thumbnail(cover)
+        return thumb
+    except Exception:
+        return None
 
 
 def _row_to_meta(row: sqlite3.Row) -> BookMetadata:

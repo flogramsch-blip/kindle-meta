@@ -101,6 +101,59 @@ def _center_crop_to_ratio(img, ratio: float):
     return img.crop((left, 0, left + new_w, h))
 
 
+def rotate(data: bytes, degrees: int, *, quality: int = JPEG_QUALITY) -> tuple[bytes, str]:
+    """Dreht ein Cover um ein Vielfaches von 90° (im Uhrzeigersinn) → JPEG."""
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover
+        raise CoverError("Pillow ist nicht installiert.") from exc
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception as exc:
+        raise CoverError(f"Cover-Bild konnte nicht gelesen werden: {exc}") from exc
+    # Pillow dreht gegen den Uhrzeigersinn -> negieren für „im Uhrzeigersinn".
+    img = img.convert("RGB").rotate(-degrees, expand=True)
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+
+def crop(data: bytes, box: tuple[int, int, int, int], *, quality: int = JPEG_QUALITY) -> tuple[bytes, str]:
+    """Schneidet auf ``box`` (left, top, right, bottom) zu → JPEG."""
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover
+        raise CoverError("Pillow ist nicht installiert.") from exc
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception as exc:
+        raise CoverError(f"Cover-Bild konnte nicht gelesen werden: {exc}") from exc
+    left, top, right, bottom = box
+    if right <= left or bottom <= top:
+        raise CoverError("Ungültiger Zuschnitt-Bereich.")
+    img = img.convert("RGB").crop((left, top, right, bottom))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+
+def thumbnail(data: bytes, *, max_side: int = 200, quality: int = 80) -> tuple[bytes, str]:
+    """Erzeugt ein kleines Vorschaubild (für die Bibliotheks-Ansicht) → JPEG."""
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover
+        raise CoverError("Pillow ist nicht installiert.") from exc
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    img = img.convert("RGB")
+    img.thumbnail((max_side, max_side), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+
 def optimize_metadata_cover(meta, **kwargs) -> None:
     """Optimiert das Cover eines ``BookMetadata`` in-place, falls vorhanden."""
     if getattr(meta, "cover", None):

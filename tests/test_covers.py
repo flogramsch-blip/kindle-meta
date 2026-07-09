@@ -54,3 +54,37 @@ def test_invalid_image_raises():
 
 def test_available_is_bool():
     assert isinstance(covers.available(), bool)
+
+
+def test_rotate_swaps_dimensions():
+    from PIL import Image
+
+    data = _make_png(400, 600)
+    out, mime = covers.rotate(data, 90)
+    assert mime == "image/jpeg"
+    img = Image.open(io.BytesIO(out))
+    assert (img.width, img.height) == (600, 400)
+
+
+def test_crop_region():
+    from PIL import Image
+
+    data = _make_png(400, 600)
+    out, _ = covers.crop(data, (0, 0, 200, 300))
+    img = Image.open(io.BytesIO(out))
+    assert (img.width, img.height) == (200, 300)
+
+
+def test_crop_invalid_box_raises():
+    data = _make_png(400, 600)
+    with pytest.raises(covers.CoverError):
+        covers.crop(data, (100, 100, 50, 50))
+
+
+def test_thumbnail_fits_box():
+    from PIL import Image
+
+    data = _make_png(1000, 1600)
+    out, _ = covers.thumbnail(data, max_side=200)
+    img = Image.open(io.BytesIO(out))
+    assert max(img.width, img.height) == 200
