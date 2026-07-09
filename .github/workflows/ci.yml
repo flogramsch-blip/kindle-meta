@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python ${{ matrix.python-version }} einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Qt-Systembibliotheken (für GUI-Smoke-Tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,gui,keyring]" ruff
+
+      - name: Lint (ruff)
+        run: ruff check kindle_meta tests
+
+      - name: Tests (pytest, headless Qt)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q

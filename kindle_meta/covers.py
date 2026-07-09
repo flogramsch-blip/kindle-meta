@@ -13,7 +13,6 @@ Benötigt Pillow. Ist es nicht installiert, löst ``optimize_for_kindle``
 from __future__ import annotations
 
 import io
-from typing import Optional
 
 # Kindle-freundliche Zielwerte.
 TARGET_RATIO = 1.6          # Höhe / Breite
@@ -119,7 +118,9 @@ def rotate(data: bytes, degrees: int, *, quality: int = JPEG_QUALITY) -> tuple[b
     return out.getvalue(), "image/jpeg"
 
 
-def crop(data: bytes, box: tuple[int, int, int, int], *, quality: int = JPEG_QUALITY) -> tuple[bytes, str]:
+def crop(
+    data: bytes, box: tuple[int, int, int, int], *, quality: int = JPEG_QUALITY
+) -> tuple[bytes, str]:
     """Schneidet auf ``box`` (left, top, right, bottom) zu → JPEG."""
     try:
         from PIL import Image

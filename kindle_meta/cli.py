@@ -84,6 +84,10 @@ def _maybe_record(path: str, meta: BookMetadata) -> None:
 
 
 def cmd_batch(args) -> int:
+    from .profile import load_protected, parse_protected
+
+    protect = parse_protected(args.protect) if args.protect else load_protected()
+
     def progress(i, total, path, outcome):
         mark = "✓" if outcome.ok else "✗"
         print(f"  [{i + 1}/{total}] {mark} {path.rsplit('/', 1)[-1]}")
@@ -95,6 +99,7 @@ def cmd_batch(args) -> int:
         use_llm=not args.no_llm,
         optimize_cover=args.optimize_cover,
         backup=not args.no_backup,
+        protect=protect,
         progress=progress,
     )
     written = 0
@@ -146,6 +151,37 @@ def cmd_undo(args) -> int:
         return 1
     restore_latest(args.path)
     print(f"Wiederhergestellt aus: {backups[0]}")
+    return 0
+
+
+def cmd_watch(args) -> int:
+    from .profile import load_protected
+    from .watch import FolderWatcher
+
+    protect = load_protected()
+    watcher = FolderWatcher(args.folder)
+    action = "anreichern & schreiben" if args.apply else "nur anzeigen"
+    print(f"Überwache '{args.folder}' (alle {args.interval}s, {action}). Strg+C beendet.")
+
+    def handle(path: str) -> None:
+        name = path.rsplit("/", 1)[-1]
+        outcomes = enrich_batch(
+            [path], apply=args.apply, out_dir=args.out_dir,
+            use_llm=not args.no_llm, protect=protect,
+        )
+        oc = outcomes[0]
+        if not oc.ok:
+            print(f"✗ {name}: {oc.error}")
+        elif oc.written_to:
+            print(f"✓ {name} → {oc.written_to}")
+        else:
+            best = oc.result.best
+            print(f"• {name}: {best.title or '?'} — {best.author_str or '?'}")
+
+    try:
+        watcher.run(handle, interval=args.interval, process_existing=args.existing)
+    except KeyboardInterrupt:
+        print("\nBeendet.")
     return 0
 
 
@@ -214,11 +250,16 @@ def main(argv: list[str] | None = None) -> int:
     p_batch.add_argument(
         "--no-backup", action="store_true", help="kein Backup vor In-Place-Überschreiben"
     )
+    p_batch.add_argument(
+        "--protect", help="Felder vor Überschreiben schützen, z. B. 'cover,title'"
+    )
     p_batch.set_defaults(func=cmd_batch)
 
     p_convert = sub.add_parser("convert", help="Format via Calibre konvertieren (z. B. nach azw3)")
     p_convert.add_argument("path")
-    p_convert.add_argument("--to", default="azw3", help="Zielformat: azw3/mobi/epub (Standard: azw3)")
+    p_convert.add_argument(
+        "--to", default="azw3", help="Zielformat: azw3/mobi/epub (Standard: azw3)"
+    )
     p_convert.set_defaults(func=cmd_convert)
 
     p_send = sub.add_parser("send", help="Datei per Send-to-Kindle an @kindle.com-Adresse mailen")
@@ -232,6 +273,17 @@ def main(argv: list[str] | None = None) -> int:
 
     p_library = sub.add_parser("library", help="Bücher in der Bibliothek auflisten")
     p_library.set_defaults(func=cmd_library)
+
+    p_watch = sub.add_parser("watch", help="Ordner überwachen und neue E-Books anreichern")
+    p_watch.add_argument("folder", help="zu überwachender Ordner")
+    p_watch.add_argument("--apply", action="store_true", help="besten Vorschlag schreiben")
+    p_watch.add_argument("--out-dir", help="Zielordner (sonst Originale überschreiben)")
+    p_watch.add_argument("--no-llm", action="store_true", help="KI-Fallback deaktivieren")
+    p_watch.add_argument("--interval", type=float, default=5.0, help="Scan-Intervall in Sekunden")
+    p_watch.add_argument(
+        "--existing", action="store_true", help="auch bereits vorhandene Dateien verarbeiten"
+    )
+    p_watch.set_defaults(func=cmd_watch)
 
     args = parser.parse_args(argv)
     try:

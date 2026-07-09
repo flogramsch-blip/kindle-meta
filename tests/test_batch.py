@@ -1,10 +1,9 @@
 """Tests für Stapelverarbeitung und Cover-Auswahl (Provider gemockt)."""
 
-from dataclasses import replace
 
 import pytest
 
-from kindle_meta import enrich, providers
+from kindle_meta import providers
 from kindle_meta.enrich import EnrichmentResult, enrich_batch
 from kindle_meta.models import BookMetadata
 from kindle_meta.readers import read_metadata

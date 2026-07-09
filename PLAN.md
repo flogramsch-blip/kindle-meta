@@ -52,23 +52,28 @@ Ziel: schnelleres, angenehmeres Arbeiten.
 - [ ] **Interaktiver Cover-Zuschnitt** (Auswahlrechteck) statt nur Funktion.
 - [ ] **Mehrfachauswahl** in der Liste + Sammelaktionen (löschen, senden).
 
-## Meilenstein D — Automatisierung & Verteilung
+## Meilenstein D — Automatisierung & Verteilung ✅ (umgesetzt)
 Ziel: weniger Handarbeit, einfache Installation.
 
-- [ ] **Watch-Ordner**: neue Downloads automatisch einlesen und anreichern.
-- [ ] **Anreicherungs-Profile**: konfigurieren, welche Felder überschrieben
-      werden dürfen (z. B. „Cover nie überschreiben").
-- [ ] **Packaging** mit PyInstaller → Ein-Klick-Apps für Windows/macOS/Linux
-      ohne separate Python-Installation.
-- [ ] **CI (GitHub Actions)**: Tests + Lint (ruff) bei jedem Push/PR.
+- [x] **Watch-Ordner** (`watch.py`): neue Dateien automatisch einlesen und
+      anreichern; CLI `kindle-meta watch`.
+- [x] **Anreicherungs-Profile** (`profile.py`): geschützte Felder, die beim
+      Anreichern nicht überschrieben werden; CLI `--protect`, GUI-Einstellung.
+- [x] **Packaging** mit PyInstaller (`packaging/kindle-meta.spec`) → Ein-Datei-App.
+- [x] **CI (GitHub Actions)**: Lint (ruff) + Tests auf Python 3.10–3.12.
 
 ---
 
 ## Empfohlener nächster Schritt
 
-Meilenstein A ist abgeschlossen; die Kerne von B (Spracherkennung, DNB,
-Fuzzy-Ranking, FB2) und C (Bibliotheks-Grid, Einstellungen, Cover-Drehen)
-ebenfalls. Als Nächstes bietet sich **Meilenstein D** an – zuerst **CI mit
-GitHub Actions** (Tests bei jedem Push absichern) und **Packaging** mit
-PyInstaller (Ein-Klick-App ohne Python). Alternativ die restlichen
-Komfort-Punkte aus C (Vorschläge feldweise übernehmen, Mehrfachauswahl).
+Die Meilensteine A und D sind abgeschlossen, die Kerne von B und C ebenfalls.
+Damit steht ein rundes, alltagstaugliches Werkzeug. Sinnvolle Restarbeiten:
+
+- **C-Feinschliff**: Vorschläge feldweise übernehmen, interaktiver
+  Cover-Zuschnitt (Auswahlrechteck), Mehrfachauswahl in Listen.
+- **B-Erweiterung**: Comic-Formate (CBZ/CBR), Sprachfilter in der Online-Suche.
+- **Qualität**: Testabdeckung messen (coverage), echte Datei-Fixtures für
+  MOBI/AZW3 sobald Calibre in der CI verfügbar ist.
+
+Empfehlung: den **C-Feinschliff** zuerst, da er die tägliche Bedienung direkt
+verbessert.

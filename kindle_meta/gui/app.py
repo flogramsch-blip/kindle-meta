@@ -84,13 +84,14 @@ class BatchSignals(QObject):
 class BatchWorker(QRunnable):
     """Führt einen Stapellauf im Hintergrund aus – mit Fortschritt & Abbruch."""
 
-    def __init__(self, paths, *, out_dir, use_llm, optimize_cover, backup):
+    def __init__(self, paths, *, out_dir, use_llm, optimize_cover, backup, protect=None):
         super().__init__()
         self.paths = paths
         self.out_dir = out_dir
         self.use_llm = use_llm
         self.optimize_cover = optimize_cover
         self.backup = backup
+        self.protect = protect
         self.signals = BatchSignals()
         self._cancelled = False
 
@@ -106,6 +107,7 @@ class BatchWorker(QRunnable):
                 use_llm=self.use_llm,
                 optimize_cover=self.optimize_cover,
                 backup=self.backup,
+                protect=self.protect,
                 progress=lambda i, total, path, oc: self.signals.progress.emit(
                     i, total, path.rsplit("/", 1)[-1]
                 ),
@@ -381,7 +383,8 @@ class MainWindow(QMainWindow):
         self.f_isbn.setText(meta.isbn or "")
         self.f_language.setText(meta.language or "")
         self.f_series.setText(meta.series or "")
-        self.f_series_index.setText("" if meta.series_index is None else _fmt_index(meta.series_index))
+        idx = meta.series_index
+        self.f_series_index.setText("" if idx is None else _fmt_index(idx))
         self.f_desc.setPlainText(meta.description or "")
         self._show_cover(meta)
 
@@ -485,7 +488,8 @@ class MainWindow(QMainWindow):
         self.cover_picker.setVisible(self.cover_picker.count() > 0)
 
         note = " (KI half beim Erkennen)" if result.used_llm else ""
-        covers = f", {self.cover_picker.count()} Cover zur Auswahl" if self.cover_picker.count() else ""
+        n_covers = self.cover_picker.count()
+        covers = f", {n_covers} Cover zur Auswahl" if n_covers else ""
         self.status.setText(
             f"{len(result.suggestions)} Vorschlag/Vorschläge gefunden{note}{covers}."
         )
@@ -560,12 +564,15 @@ class MainWindow(QMainWindow):
         self.cancel_btn.show()
         self.batch_btn.setEnabled(False)
 
+        from ..profile import load_protected
+
         worker = BatchWorker(
             paths,
             out_dir=out_dir,
             use_llm=True,
             optimize_cover=self.batch_optimize.isChecked(),
             backup=self.backup_cb.isChecked(),
+            protect=load_protected(),
         )
         worker.signals.progress.connect(self._on_batch_progress)
         worker.signals.done.connect(self._on_batch_done)
@@ -758,6 +765,7 @@ class SettingsDialog(QDialog):
         ("smtp_user", "SMTP-Benutzer", False),
         ("smtp_pass", "SMTP-Passwort", True),
         ("smtp_from", "Absender (optional)", False),
+        ("protected_fields", "Geschützte Felder (z. B. cover,title)", False),
     ]
 
     def __init__(self, parent=None):

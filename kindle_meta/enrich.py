@@ -32,8 +32,14 @@ class EnrichmentResult:
     @property
     def best(self) -> BookMetadata:
         """Bester Vorschlag mit Datei-Werten als Fallback."""
+        return self.best_with(None)
+
+    def best_with(self, protect: Optional[set[str]]) -> BookMetadata:
+        """Bester Vorschlag; ``protect`` schützt genannte Felder vor Überschreiben."""
         if self.suggestions:
-            return self.original.merged_with(self.suggestions[0], prefer_other=True)
+            return self.original.merged_with(
+                self.suggestions[0], prefer_other=True, protect=protect
+            )
         return self.original
 
     @property
@@ -159,6 +165,7 @@ def enrich_batch(
     max_results: int = 5,
     optimize_cover: bool = False,
     backup: bool = False,
+    protect: Optional[set[str]] = None,
     progress: Optional[ProgressCallback] = None,
     should_cancel: Optional[CancelCheck] = None,
 ) -> list[BatchOutcome]:
@@ -186,7 +193,8 @@ def enrich_batch(
             if apply and result.suggestions:
                 out_path = _out_path_for(path, out_dir)
                 outcome.written_to = write_metadata(
-                    result.best, out_path, optimize_cover=optimize_cover, backup=backup
+                    result.best_with(protect), out_path,
+                    optimize_cover=optimize_cover, backup=backup,
                 )
         except Exception as exc:  # einzelne Datei darf den Stapel nicht stoppen
             outcome.error = f"{type(exc).__name__}: {exc}"

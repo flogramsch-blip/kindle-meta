@@ -48,16 +48,32 @@ class BookMetadata:
     def has_cover(self) -> bool:
         return bool(self.cover)
 
-    def merged_with(self, other: "BookMetadata", *, prefer_other: bool = True) -> "BookMetadata":
+    def merged_with(
+        self,
+        other: "BookMetadata",
+        *,
+        prefer_other: bool = True,
+        protect: Optional[set[str]] = None,
+    ) -> "BookMetadata":
         """Kombiniert zwei Metadaten-Sätze.
 
         Standardmäßig gewinnen die Werte aus ``other`` (z. B. eine Online-DB),
         aber nur wenn sie tatsächlich gesetzt sind – leere Felder überschreiben
         nie vorhandene Werte.
+
+        ``protect`` nennt Feldnamen, deren vorhandener Wert in ``self`` niemals
+        von ``other`` überschrieben wird (Anreicherungs-Profil, z. B. Cover
+        schützen).
         """
         primary, secondary = (other, self) if prefer_other else (self, other)
+        protect = protect or set()
 
         def pick(field_name: str):
+            # Geschütztes Feld: eigener Wert bleibt, wenn vorhanden.
+            if field_name in protect:
+                own = getattr(self, field_name)
+                if own not in (None, "", []):
+                    return own
             pval = getattr(primary, field_name)
             sval = getattr(secondary, field_name)
             if isinstance(pval, list):

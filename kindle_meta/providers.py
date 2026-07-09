@@ -50,7 +50,9 @@ def search_by_isbn(isbn: str, *, fetch_covers: bool = True) -> Optional[BookMeta
 # --------------------------------------------------------------------------- #
 # Google Books
 # --------------------------------------------------------------------------- #
-def search_google_books(query: str, *, max_results: int = 5, fetch_covers: bool = True) -> list[BookMetadata]:
+def search_google_books(
+    query: str, *, max_results: int = 5, fetch_covers: bool = True
+) -> list[BookMetadata]:
     import requests
 
     try:
@@ -93,7 +95,9 @@ def search_google_books(query: str, *, max_results: int = 5, fetch_covers: bool 
 # --------------------------------------------------------------------------- #
 # Open Library
 # --------------------------------------------------------------------------- #
-def search_openlibrary(query: str, *, max_results: int = 5, fetch_covers: bool = True) -> list[BookMetadata]:
+def search_openlibrary(
+    query: str, *, max_results: int = 5, fetch_covers: bool = True
+) -> list[BookMetadata]:
     import requests
 
     try:

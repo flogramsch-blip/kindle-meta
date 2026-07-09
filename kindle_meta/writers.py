@@ -53,9 +53,9 @@ def write_metadata(
         _backup.create_backup(src)
 
     if optimize_cover and meta.cover:
-        from . import covers  # lazy, damit Pillow optional bleibt
-
         from dataclasses import replace as _replace
+
+        from . import covers  # lazy, damit Pillow optional bleibt
 
         opt_bytes, opt_mime = covers.optimize_for_kindle(meta.cover)
         meta = _replace(meta, cover=opt_bytes, cover_mime=opt_mime)

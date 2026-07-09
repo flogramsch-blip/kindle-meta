@@ -34,6 +34,8 @@ die Metadaten direkt in die Datei (EPUB: OPF/DC + Cover-Item, PDF: Info-Dictiona
 - **Backup & Undo**: automatische Sicherung vor dem Überschreiben, Wiederherstellung per `undo`.
 - **Bibliothek (SQLite)**: bearbeitete Bücher + Status bleiben über Sitzungen erhalten.
 - **ISBN-Erkennung**: gültige ISBN aus dem Text (Impressum) automatisch ziehen.
+- **Anreicherungs-Profile**: einzelne Felder (z. B. Cover) vor Überschreiben schützen.
+- **Watch-Ordner**: neue Downloads in einem Ordner automatisch anreichern (`watch`).
 - **Konvertierung** nach AZW3/MOBI via Calibre (für ältere Kindles).
 
 ## Installation
@@ -90,6 +92,10 @@ kindle-meta apply buch.epub --optimize-cover --series "Die Chroniken" --series-i
 kindle-meta undo    buch.epub               # letztes Backup wiederherstellen
 kindle-meta library                         # bearbeitete Bücher auflisten
 
+# Felder schützen (Cover/Titel bleiben erhalten) und Ordner überwachen
+kindle-meta batch *.epub --apply --protect "cover,title"
+kindle-meta watch ~/Downloads --apply --out-dir ~/Kindle/
+
 # Kindle-Eigenformate (erfordert Calibre)
 kindle-meta info    buch.azw3
 kindle-meta convert fertig.epub --to azw3   # für ältere Kindles
@@ -139,19 +145,36 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/backup.py`   | Sicherungskopien anlegen/wiederherstellen |
 | `kindle_meta/library.py`  | SQLite-Bibliothek: bearbeitete Bücher + Status |
 | `kindle_meta/config.py`   | App-Verzeichnis & Einstellungen (keyring optional) |
+| `kindle_meta/profile.py`  | Anreicherungs-Profile: geschützte Felder |
+| `kindle_meta/watch.py`    | Ordner-Überwachung (Polling) |
 | `kindle_meta/enrich.py`   | Orchestrierung: lesen → anreichern → Vorschläge, Stapellauf |
 | `kindle_meta/writers.py`  | Metadaten + Cover + Serie zurückschreiben |
 | `kindle_meta/gui/app.py`  | PySide6-GUI: Editor- & Bibliotheks-Tab, Cover-Editor, Einstellungen |
-| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send/undo/library) |
+| `kindle_meta/cli.py`      | Kommandozeile (info/enrich/apply/batch/convert/send/undo/library/watch) |
 
 Die **Kern-Logik ist von der GUI getrennt** und über `tests/` abgedeckt.
 
-## Tests
+## Als eigenständige App verpacken
+
+Mit PyInstaller entsteht eine Ein-Datei-App, die kein installiertes Python braucht:
 
 ```bash
-pip install -e ".[dev]"
-pytest
+pip install -e ".[gui,build]"
+pyinstaller packaging/kindle-meta.spec
+# Ergebnis: dist/kindle-meta
 ```
+
+## Tests & Lint
+
+```bash
+pip install -e ".[dev,gui]"
+ruff check kindle_meta tests
+QT_QPA_PLATFORM=offscreen pytest
+```
+
+Bei jedem Push/Pull-Request läuft die [GitHub-Actions-CI](.github/workflows/ci.yml)
+(Lint + Tests auf Python 3.10–3.12). GUI-Tests laufen headless (Qt „offscreen")
+und überspringen sich, falls PySide6 fehlt.
 
 ## Roadmap
 

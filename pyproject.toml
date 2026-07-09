@@ -20,7 +20,8 @@ dependencies = [
 gui = ["PySide6>=6.5"]
 llm = ["anthropic>=0.40"]
 keyring = ["keyring>=24"]  # sichere Ablage von SMTP-Zugangsdaten
-dev = ["pytest>=7.0", "PySide6>=6.5"]  # PySide6 für die GUI-Smoke-Tests
+build = ["pyinstaller>=6.0"]  # Ein-Datei-App bauen
+dev = ["pytest>=7.0", "PySide6>=6.5", "ruff>=0.5"]  # Tests + Lint
 
 [project.scripts]
 kindle-meta = "kindle_meta.cli:main"
@@ -33,3 +34,11 @@ include = ["kindle_meta*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B"]
+ignore = ["B008"]  # Funktionsaufrufe in Argument-Defaults sind hier bewusst genutzt

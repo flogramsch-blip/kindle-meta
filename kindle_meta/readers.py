@@ -76,7 +76,7 @@ def _read_epub(path: str) -> BookMetadata:
             break
 
     # Serien-Angaben (Calibre-Konvention) für Kindle-Sammlungen.
-    for value, attrs in book.get_metadata("OPF", "meta"):
+    for _value, attrs in book.get_metadata("OPF", "meta"):
         name = (attrs or {}).get("name")
         content = (attrs or {}).get("content")
         if name == "calibre:series":
