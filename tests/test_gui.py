@@ -136,3 +136,20 @@ def test_multiselect_remove(qapp):
     assert len(w._selected_paths()) == 2
     w._remove_selected()
     assert w.file_list.count() == 0
+
+
+def test_ai_result_added_as_marked_suggestion(qapp, sample_epub):
+    from kindle_meta.models import BookMetadata
+    from kindle_meta.readers import read_metadata
+
+    w = _make_window(qapp)
+    w._on_meta_loaded(read_metadata(sample_epub))
+
+    ki = BookMetadata(title="KI Titel", authors=["KI Autor"], publisher="KI Verlag")
+    w._on_ai_result(ki)
+
+    # KI-Ergebnis steht als erster Vorschlag und ist markiert.
+    assert w._suggestions[0] is ki
+    assert id(ki) in w._ai_ids
+    assert w.compare_btn.isEnabled()
+    assert "🤖 KI:" in w.suggestion_box.itemText(1)  # Eintrag 0 ist der Platzhalter

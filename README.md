@@ -56,10 +56,13 @@ korrekt. Für ältere Geräte siehe [Auf den Kindle bringen](#auf-den-kindle-bri
 - **Lesen**: EPUB, PDF, **FB2** & **Comics (CBZ/CBR)** nativ, **MOBI/AZW3/AZW**
   via Calibre – vorhandene Metadaten + Textprobe der ersten Seiten.
 - **Anreichern** aus mehreren Quellen:
-  1. **Online-Datenbanken** – Google Books, Open Library & **DNB** (Deutsche
-     Nationalbibliothek, stark bei deutschen Titeln).
-  2. **KI-Fallback** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
-  3. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
+  1. **Online-Datenbanken** – Google Books, Open Library, **DNB** (Deutsche
+     Nationalbibliothek, stark bei deutschen Titeln) & **Apple Books** (gute Cover).
+  2. **KI automatisch** – Claude erkennt Titel/Autor aus dem Text, wenn Metadaten fehlen.
+  3. **KI manuell** – Knopf „🤖 KI abfragen": Claude recherchiert das Buch gezielt;
+     das Ergebnis kommt als zusätzlicher (markierter) Vorschlag dazu und lässt sich
+     mit den Online-Treffern kombinieren – beides ist parallel nutzbar.
+  4. **Manuell** – jeder Vorschlag ist editierbar und wird vor dem Schreiben bestätigt.
 - **Beste Treffer zuerst**: Vorschläge werden per Ähnlichkeit (Titel/Autor/ISBN) sortiert.
 - **Vorschläge vergleichen**: Felder aus mehreren Treffern kombinieren (GUI-Dialog).
 - **Spracherkennung**: Sprache aus dem Text bestimmen (setzt `language`, filtert die Suche).
@@ -105,7 +108,9 @@ kindle-meta-gui
 Tab **„Bearbeiten"**:
 1. Bücher per Button oder **Drag & Drop** hinzufügen.
 2. Buch auswählen → vorhandene Metadaten + Cover erscheinen (Cover drehbar mit ↺/↻).
-3. **„Online suchen / anreichern"** → Vorschläge wählen (oder Felder manuell füllen).
+3. **„Online suchen / anreichern"** → Treffer aus 4 Datenbanken; optional **„🤖 KI abfragen"**
+   für eine zusätzliche Claude-Recherche. Passenden Vorschlag wählen oder über
+   **„Vergleichen …"** Felder aus mehreren Quellen (inkl. KI) kombinieren.
 4. **„Speichern"** → Metadaten werden in die Datei geschrieben (Backup optional).
 
 Tab **„Bibliothek"**: Cover-Grid aller bearbeiteten Bücher mit Suchfeld;
@@ -177,10 +182,10 @@ convert_with_calibre("fertig.epub", "azw3")   # erfordert Calibre
 | `kindle_meta/models.py`   | `BookMetadata` – zentrales Datenmodell + Merge-Logik |
 | `kindle_meta/readers.py`  | EPUB/PDF/FB2/CBZ/CBR einlesen (Metadaten + Textprobe) |
 | `kindle_meta/calibre.py`  | MOBI/AZW3 lesen/schreiben & Konvertierung via Calibre |
-| `kindle_meta/providers.py`| Google Books, Open Library & DNB abfragen |
+| `kindle_meta/providers.py`| Google Books, Open Library, DNB & Apple Books abfragen |
 | `kindle_meta/matching.py` | Vorschläge nach Ähnlichkeit bewerten/sortieren |
 | `kindle_meta/lang.py`     | Spracherkennung über Stoppwörter (ohne Abhängigkeit) |
-| `kindle_meta/llm.py`      | Claude-Fallback für Titel/Autor aus Text |
+| `kindle_meta/llm.py`      | Claude: Fallback-Erkennung + manuelle Recherche |
 | `kindle_meta/covers.py`   | Cover für die Kindle-Anzeige optimieren (Pillow) |
 | `kindle_meta/sendmail.py` | Send-to-Kindle per SMTP-E-Mail |
 | `kindle_meta/isbn.py`     | ISBN aus Text erkennen & validieren |

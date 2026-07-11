@@ -57,6 +57,33 @@ def test_read_cbz_without_comicinfo(tmp_path):
     assert meta.title is None        # keine Metadaten vorhanden
 
 
+def test_parse_apple_json():
+    data = {
+        "resultCount": 1,
+        "results": [
+            {
+                "trackName": "Der Steppenwolf",
+                "artistName": "Hermann Hesse",
+                "description": "Ein Roman.",
+                "releaseDate": "2015-04-30T07:00:00Z",
+                "genres": ["Belletristik", "Klassiker"],
+            }
+        ],
+    }
+    res = providers.parse_apple_json(data, fetch_covers=False)
+    assert len(res) == 1
+    m = res[0]
+    assert m.title == "Der Steppenwolf"
+    assert m.authors == ["Hermann Hesse"]
+    assert m.published == "2015-04-30"
+    assert m.description == "Ein Roman."
+    assert m.subjects == ["Belletristik", "Klassiker"]
+
+
+def test_parse_apple_json_empty():
+    assert providers.parse_apple_json({"results": []}) == []
+
+
 def test_lang2_mapping():
     assert providers._lang2("de") == "de"
     assert providers._lang2("ger") == "de"

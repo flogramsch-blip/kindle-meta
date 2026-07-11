@@ -21,6 +21,7 @@ GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
 OPENLIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
 OPENLIBRARY_COVER_URL = "https://covers.openlibrary.org/b/id/{cover_id}-L.jpg"
 DNB_SRU_URL = "https://services.dnb.de/sru/dnb"
+APPLE_BOOKS_URL = "https://itunes.apple.com/search"
 
 _TIMEOUT = 15
 
@@ -44,6 +45,7 @@ def search(
     ))
     results.extend(search_openlibrary(query, max_results=max_results, fetch_covers=fetch_covers))
     results.extend(search_dnb(query, max_results=max_results))
+    results.extend(search_apple_books(query, max_results=max_results, fetch_covers=fetch_covers))
     return results
 
 
@@ -238,6 +240,53 @@ def parse_dnb_oai_dc(xml: bytes, *, max_results: int = 5) -> list[BookMetadata]:
             out.append(meta)
         if len(out) >= max_results:
             break
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Apple Books (iTunes Search API)
+# --------------------------------------------------------------------------- #
+def search_apple_books(
+    query: str, *, max_results: int = 5, fetch_covers: bool = True
+) -> list[BookMetadata]:
+    """Sucht in Apple Books über die iTunes-Search-API (kostenlos, ohne Key).
+
+    Liefert Titel, Autor, Beschreibung, Datum, Genres und ein Cover. Keine
+    ISBN/kein Verlag. Fehler ergeben eine leere Liste.
+    """
+    import requests
+
+    try:
+        resp = requests.get(
+            APPLE_BOOKS_URL,
+            params={"term": query, "media": "ebook", "entity": "ebook",
+                    "limit": max_results},
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+    return parse_apple_json(data, fetch_covers=fetch_covers)
+
+
+def parse_apple_json(data: dict, *, fetch_covers: bool = True) -> list[BookMetadata]:
+    """Parst die iTunes-Search-Antwort – separat testbar."""
+    out: list[BookMetadata] = []
+    for item in data.get("results", []):
+        meta = BookMetadata(
+            title=item.get("trackName") or item.get("collectionName"),
+            authors=[item["artistName"]] if item.get("artistName") else [],
+            description=item.get("description"),
+            published=(item.get("releaseDate") or "")[:10] or None,
+            subjects=list(item.get("genres", [])),
+        )
+        if fetch_covers and item.get("artworkUrl100"):
+            # Größere Auflösung anfordern (100x100 -> 600x600).
+            url = item["artworkUrl100"].replace("100x100bb", "600x600bb")
+            meta.cover, meta.cover_mime = _download(url)
+        if meta.title:
+            out.append(meta)
     return out
 
 

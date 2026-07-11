@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         # Zustand
         self._current_meta: BookMetadata | None = None
         self._suggestions: list[BookMetadata] = []
+        self._ai_ids: set[int] = set()  # welche Vorschläge von der KI stammen
         self._cover_candidates: list[CoverCandidate] = []
         self._batch_worker: BatchWorker | None = None
         self._kindle_addr: str = ""
@@ -273,6 +274,9 @@ class MainWindow(QMainWindow):
 
         self.search_btn = QPushButton("Online suchen / anreichern")
         self.search_btn.clicked.connect(self._enrich)
+        self.ai_btn = QPushButton("🤖 KI abfragen")
+        self.ai_btn.setToolTip("Buch von Claude recherchieren lassen (zusätzlich zu den Online-Quellen)")  # noqa: E501
+        self.ai_btn.clicked.connect(self._ai_research)
         self.compare_btn = QPushButton("Vergleichen …")
         self.compare_btn.setToolTip("Vorschläge feldweise vergleichen und kombinieren")
         self.compare_btn.clicked.connect(self._compare_suggestions)
@@ -285,6 +289,7 @@ class MainWindow(QMainWindow):
         actions.addWidget(QLabel("Vorschläge:"))
         actions.addWidget(self.suggestion_box, 1)
         actions.addWidget(self.search_btn)
+        actions.addWidget(self.ai_btn)
         actions.addWidget(self.compare_btn)
         right.addLayout(actions)
 
@@ -384,6 +389,7 @@ class MainWindow(QMainWindow):
     def _on_meta_loaded(self, meta: BookMetadata) -> None:
         self._current_meta = meta
         self._suggestions = []
+        self._ai_ids = set()
         self._cover_candidates = []
         self.cover_picker.clear()
         self.cover_picker.hide()
@@ -474,7 +480,7 @@ class MainWindow(QMainWindow):
     def _enrich(self) -> None:
         if self._current_meta is None:
             return
-        self.status.setText("Suche online (Google Books / Open Library) …")
+        self.status.setText("Suche online (Google Books, Open Library, DNB, Apple Books) …")
         self.search_btn.setEnabled(False)
         base = self._collect_form()
         worker = Worker(enrich_metadata, base)
@@ -484,23 +490,36 @@ class MainWindow(QMainWindow):
 
     def _on_enriched(self, result: EnrichmentResult) -> None:
         self.search_btn.setEnabled(True)
-        self._suggestions = result.suggestions
+        self._suggestions = list(result.suggestions)
+        self._ai_ids = set()
+        self._render_suggestion_box()
+        self._render_cover_picker(result.cover_candidates)
+
+        note = " (KI half beim Erkennen)" if result.used_llm else ""
+        n_covers = self.cover_picker.count()
+        covers = f", {n_covers} Cover zur Auswahl" if n_covers else ""
+        self.status.setText(
+            f"{len(self._suggestions)} Vorschlag/Vorschläge gefunden{note}{covers}."
+        )
+
+    def _render_suggestion_box(self) -> None:
         self.suggestion_box.blockSignals(True)
         self.suggestion_box.clear()
         self.suggestion_box.addItem("— Vorschlag wählen —")
-        for sug in result.suggestions:
-            label = f"{sug.title or '?'} — {sug.author_str or '?'}"
+        for sug in self._suggestions:
+            prefix = "🤖 KI: " if id(sug) in self._ai_ids else ""
+            label = f"{prefix}{sug.title or '?'} — {sug.author_str or '?'}"
             if sug.published:
                 label += f" ({sug.published})"
             self.suggestion_box.addItem(label)
-        self.suggestion_box.setEnabled(bool(result.suggestions))
+        self.suggestion_box.setEnabled(bool(self._suggestions))
         self.suggestion_box.blockSignals(False)
-        self.compare_btn.setEnabled(bool(result.suggestions))
+        self.compare_btn.setEnabled(bool(self._suggestions))
 
-        # Cover-Auswahl befüllen.
-        self._cover_candidates = result.cover_candidates
+    def _render_cover_picker(self, candidates: list[CoverCandidate]) -> None:
+        self._cover_candidates = candidates
         self.cover_picker.clear()
-        for cand in self._cover_candidates:
+        for cand in candidates:
             pix = QPixmap()
             if not pix.loadFromData(cand.data):
                 continue
@@ -510,12 +529,50 @@ class MainWindow(QMainWindow):
             self.cover_picker.addItem(item)
         self.cover_picker.setVisible(self.cover_picker.count() > 0)
 
-        note = " (KI half beim Erkennen)" if result.used_llm else ""
-        n_covers = self.cover_picker.count()
-        covers = f", {n_covers} Cover zur Auswahl" if n_covers else ""
+    # -- Manuelle KI-Recherche ---------------------------------------------- #
+    def _ai_research(self) -> None:
+        if self._current_meta is None:
+            return
+        from .. import llm
+
+        if not llm.available():
+            QMessageBox.information(
+                self, "KI-Recherche nicht aktiv",
+                "Für die KI-Recherche wird das Paket 'anthropic' und ein API-Schlüssel "
+                "benötigt:\n\n  pip install anthropic\n  ANTHROPIC_API_KEY=sk-… setzen\n\n"
+                "Danach steht die KI-Suche zur Verfügung.",
+            )
+            return
+        self.status.setText("KI recherchiert das Buch …")
+        self.ai_btn.setEnabled(False)
+        base = self._collect_form()
+        worker = Worker(llm.research_metadata, base)
+        worker.signals.result.connect(self._on_ai_result)
+        worker.signals.error.connect(self._on_ai_error)
+        self.pool.start(worker)
+
+    def _on_ai_result(self, meta) -> None:
+        self.ai_btn.setEnabled(True)
+        if meta is None or not (meta.title or meta.authors or meta.description):
+            self.status.setText("KI konnte keine zusätzlichen Infos liefern.")
+            return
+        # KI-Ergebnis als zusätzlichen Vorschlag oben einreihen.
+        self._suggestions.insert(0, meta)
+        self._ai_ids.add(id(meta))
+        self._render_suggestion_box()
+        # Cover-Auswahl ggf. um KI-Cover ergänzen.
+        if meta.cover:
+            cands = list(self._cover_candidates)
+            cands.append(CoverCandidate("🤖 KI", meta.cover, meta.cover_mime))
+            self._render_cover_picker(cands)
         self.status.setText(
-            f"{len(result.suggestions)} Vorschlag/Vorschläge gefunden{note}{covers}."
+            "🤖 KI-Infos hinzugefügt – im Vorschlags-Menü wählbar oder über "
+            "„Vergleichen …“ mit den Online-Treffern kombinierbar."
         )
+
+    def _on_ai_error(self, tb: str) -> None:
+        self.ai_btn.setEnabled(True)
+        self._on_error(tb)
 
     def _apply_suggestion(self, index: int) -> None:
         if index <= 0 or index - 1 >= len(self._suggestions):
@@ -807,7 +864,7 @@ class MainWindow(QMainWindow):
         for w in (
             self.f_title, self.f_author, self.f_publisher, self.f_date,
             self.f_isbn, self.f_language, self.f_series, self.f_series_index,
-            self.f_desc, self.search_btn,
+            self.f_desc, self.search_btn, self.ai_btn,
         ):
             w.setEnabled(enabled)
 
